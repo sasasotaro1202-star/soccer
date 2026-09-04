@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Soccer Backtest V5 CORRECTED / Multi-Source / Leak-Safe
+Soccer Backtest V8 FINAL / Multi-Source / Leak-Safe
 
 用途ごとに最適なソースを分離して検証する。
 
@@ -99,8 +99,8 @@ FD_CACHE = CACHE / "football_data"
 UNDERSTAT_CACHE = CACHE / "understat"
 SOFA_CACHE = CACHE / "sofascore"
 OPENFOOTBALL_CACHE = Path(os.getenv("OPENFOOTBALL_CACHE", str(CACHE / "openfootball")))
-CHECKPOINT = ROOT / "backtest_checkpoint_v5.pkl"
-COMPLETE_MARKER = ROOT / "BACKTEST_COMPLETE_V5"
+CHECKPOINT = ROOT / "backtest_checkpoint_v8.pkl"
+COMPLETE_MARKER = ROOT / "BACKTEST_COMPLETE_V8"
 
 # Optimization target: maximize out-of-sample quality as far as the data allows.
 # "100%" is an optimization target, not a promise of perfect real-world accuracy.
@@ -113,8 +113,8 @@ FRIENDLY_COVERAGE = []
 
 MAX_RUNTIME = int(os.getenv("MAX_RUNTIME_SECONDS", "1680"))
 MIN_TRAIN = 260
-MAX_TRAIN = 2200
-RETRAIN_EVERY = 35
+MAX_TRAIN = 1800
+RETRAIN_EVERY = 75
 VALID_FRAC = 0.20
 SAVE_EVERY = 20
 RANDOM_STATE = 42
@@ -153,6 +153,15 @@ def norm3(x):
     a = np.nan_to_num(a, nan=1/3, posinf=1/3, neginf=1/3)
     a = np.maximum(a, 1e-12)
     return a / a.sum()
+
+
+def n3_rows(x):
+    """Row-wise probability normalization for an (n,3) matrix."""
+    a=np.asarray(x,dtype=float)
+    if a.ndim==1: return norm3(a)
+    a=np.nan_to_num(a,nan=1/3,posinf=1/3,neginf=1/3)
+    a=np.maximum(a,1e-12)
+    return a/a.sum(axis=1,keepdims=True)
 
 
 def sigmoid(x):
@@ -795,63 +804,130 @@ def score_model(h,a,L):
 def build_models():
     return {
         "Logistic": Pipeline([("scale",StandardScaler()),("clf",LogisticRegression(C=.18,max_iter=900,random_state=RANDOM_STATE))]),
-        "ExtraTrees": ExtraTreesClassifier(n_estimators=320,min_samples_leaf=8,max_features=.72,class_weight="balanced_subsample",random_state=RANDOM_STATE,n_jobs=-1),
-        "RandomForest": RandomForestClassifier(n_estimators=260,min_samples_leaf=8,max_features=.70,class_weight="balanced_subsample",random_state=RANDOM_STATE,n_jobs=-1),
-        "HistGB": HistGradientBoostingClassifier(max_iter=210,learning_rate=.035,max_leaf_nodes=15,l2_regularization=2.0,random_state=RANDOM_STATE),
+        "ExtraTrees": ExtraTreesClassifier(n_estimators=260,min_samples_leaf=8,max_features=.72,class_weight="balanced_subsample",random_state=RANDOM_STATE,n_jobs=-1),
+        "RandomForest": RandomForestClassifier(n_estimators=220,min_samples_leaf=8,max_features=.70,class_weight="balanced_subsample",random_state=RANDOM_STATE,n_jobs=-1),
+        "HistGB": HistGradientBoostingClassifier(max_iter=180,learning_rate=.035,max_leaf_nodes=15,l2_regularization=2.0,random_state=RANDOM_STATE),
     }
+
+
+def _chronological_folds(n, min_train=140, n_folds=3):
+    """Expanding-window folds; every validation row is strictly after its training rows."""
+    if n < min_train + 30: return []
+    tail=max(30, int(n*0.12))
+    folds=[]
+    for k in range(n_folds,0,-1):
+        ve=n-(k-1)*tail
+        vs=ve-tail
+        if vs < min_train or ve<=vs: continue
+        folds.append((vs,ve))
+    # remove accidental overlap/duplicates while preserving chronology
+    out=[]; seen=set()
+    for f in folds:
+        if f not in seen: out.append(f); seen.add(f)
+    return out
+
+
+def _fit_sample_weight(model,X,y,w):
+    try:
+        return model.fit(X,y,sample_weight=w)
+    except TypeError:
+        return model.fit(X,y)
 
 
 def fit_ensemble(hist):
     if len(hist)<MIN_TRAIN: return None
     d=hist[-MAX_TRAIN:]
     X=np.vstack([z["x"] for z in d]); y=np.asarray([z["y"] for z in d],dtype=int)
-    cut=max(1,min(len(y)-1,int(len(y)*(1-VALID_FRAC))))
-    val={}; fitted={}
-    for name,model in build_models().items():
-        try:
-            model.fit(X[:cut],y[:cut])
-            val[name]=float(log_loss(y[cut:],model.predict_proba(X[cut:]),labels=[0,1,2]))
-        except Exception as e:
-            print(f"[WARN] validation {name}: {e}")
+    folds=_chronological_folds(len(y),min_train=max(140,MIN_TRAIN//2),n_folds=3)
+    if not folds: return None
+    oos={name:[] for name in build_models()}; yy=[]; losses=defaultdict(list)
+    for vs,ve in folds:
+        Xtr,ytr=X[:vs],y[:vs]
+        ages=np.arange(vs)[::-1]
+        w=np.exp(-np.log(2)*ages/650.0)
+        for name in build_models():
+            try:
+                m=build_models()[name]
+                _fit_sample_weight(m,Xtr,ytr,w)
+                pp=np.vstack([np.asarray(m.predict_proba(z.reshape(1,-1))[0],dtype=float) for z in X[vs:ve]])
+                aligned=[]
+                for q in pp:
+                    a=np.zeros(3)
+                    for i,c in enumerate(m.classes_):
+                        if int(c) in (0,1,2): a[int(c)]=q[i]
+                    aligned.append(norm3(a))
+                aligned=np.vstack(aligned)
+                oos[name].append(aligned)
+                losses[name].append(float(log_loss(y[vs:ve],aligned,labels=[0,1,2])))
+            except Exception as e:
+                print(f"[WARN] OOS {name}: {e}")
+        yy.extend(y[vs:ve].tolist())
+    yy=np.asarray(yy,dtype=int)
+    val={n:float(np.mean(v)) for n,v in losses.items() if v}
     if not val: return None
     names=list(val)
-    w=np.exp(-(np.asarray([val[n] for n in names])-min(val.values()))/.10)
-    w=np.clip(w,.08,.72); w/=w.sum()
-    for name in names:
+    raw=np.exp(-(np.asarray([val[n] for n in names])-min(val.values()))/.08)
+    raw=np.clip(raw,.08,.70); raw/=raw.sum()
+    temps={}
+    for n in names:
         try:
-            model=build_models()[name]; model.fit(X,y); fitted[name]=model
-        except Exception: pass
-    return {"models":fitted,"weights":dict(zip(names,w)),"validation_logloss":val}
+            pp=np.vstack(oos[n])
+            best_t=(1.0,log_loss(yy,pp,labels=[0,1,2]))
+            for t in np.arange(.70,1.51,.05):
+                cal=np.vstack([norm3(np.exp(np.log(np.maximum(q,1e-12))/t)) for q in pp])
+                ll=log_loss(yy,cal,labels=[0,1,2])
+                if ll<best_t[1]: best_t=(float(t),float(ll))
+            temps[n]=best_t[0]
+        except Exception:
+            temps[n]=1.0
+    fitted={}
+    ages=np.arange(len(y))[::-1]
+    w=np.exp(-np.log(2)*ages/650.0)
+    for n in names:
+        try:
+            m=build_models()[n]
+            _fit_sample_weight(m,X,y,w)
+            fitted[n]=m
+        except Exception as e:
+            print(f"[WARN] final fit {n}: {e}")
+    return {"models":fitted,"weights":dict(zip(names,raw)),"validation_logloss":val,"temperatures":temps,"folds":folds}
 
 
 def pred_ml(bundle,x):
     if not bundle: return np.ones(3)/3
     ps=[]; ws=[]
-    for name,model in bundle["models"].items():
+    for name,model in bundle.get("models",{}).items():
         try:
             raw=model.predict_proba(x.reshape(1,-1))[0]
             p=np.zeros(3)
             for i,c in enumerate(model.classes_):
                 if int(c) in (0,1,2): p[int(c)]=raw[i]
-            ps.append(norm3(p)); ws.append(bundle["weights"].get(name,0))
+            p=norm3(p)
+            t=float(bundle.get("temperatures",{}).get(name,1.0))
+            p=norm3(np.exp(np.log(np.maximum(p,1e-12))/max(.1,t)))
+            ps.append(p); ws.append(bundle.get("weights",{}).get(name,0.0))
         except Exception: pass
     if not ps: return np.ones(3)/3
-    w=np.asarray(ws); w/=max(w.sum(),1e-12)
+    w=np.asarray(ws,dtype=float); w/=max(w.sum(),1e-12)
     return norm3(np.average(np.vstack(ps),axis=0,weights=w))
 
 
 def optimize_blend(hist):
+    """Optimize expert weights only on already-realized historical OOS predictions."""
     if len(hist)<360: return (.56,.28,.16)
-    d=hist[-MAX_TRAIN:]; cut=int(len(d)*.80); val=d[cut:]
+    d=hist[-MAX_TRAIN:]
+    # Use the most recent 60% of already-OOS predictions so weights adapt to regime changes.
+    cut=max(180,int(len(d)*.40)); val=d[cut:]
     y=np.asarray([z["y"] for z in val],dtype=int)
-    ml=np.vstack([z["ml"] for z in val]); mk=np.vstack([z["market"] for z in val]); sc=np.vstack([z["score"] for z in val])
-    best=(.56,.28,.16,999.)
-    for mw in np.arange(.10,.46,.05):
-        for sw in np.arange(.05,.36,.05):
-            lw=1-mw-sw
-            if lw<.35: continue
-            p=np.asarray([norm3(lw*ml[i]+mw*mk[i]+sw*sc[i]) for i in range(len(y))])
-            ll=log_loss(y,p,labels=[0,1,2])
+    ml=np.vstack([norm3(z["ml"]) for z in val]); mk=np.vstack([norm3(z["market"]) for z in val]); sc=np.vstack([norm3(z["score"]) for z in val])
+    n=len(y); weights=np.exp(-np.log(2)*np.arange(n)[::-1]/650.0)
+    best=(.56,.28,.16,1e9)
+    for mw in np.arange(.10,.56,.05):
+        for sw in np.arange(.05,.41,.05):
+            lw=1.0-mw-sw
+            if lw<.25 or lw>0.80: continue
+            pred=n3_rows(lw*ml+mw*mk+sw*sc)
+            ll=log_loss(y,pred,labels=[0,1,2],sample_weight=weights)
             if ll<best[3]: best=(float(lw),float(mw),float(sw),float(ll))
     return best[:3]
 
@@ -1082,7 +1158,7 @@ def mom_score(p, winp, elo, opp):
 def save_state(done,results,scores,moms,model_rows,coverage,histories,bundles,blends,leagues,players,last_dates,h2h,global_elo=None,cursor=0,active_seasons=None):
     tmp=CHECKPOINT.with_suffix(".tmp")
     payload={
-        "version":5,"done":list(done),"results":results,"scores":scores,"moms":moms,"model_rows":model_rows,"coverage":coverage,
+        "version":8,"done":list(done),"results":results,"scores":scores,"moms":moms,"model_rows":model_rows,"coverage":coverage,
         "histories":dict(histories),"bundles":bundles,"blends":dict(blends),"leagues":leagues,
         "players":{k:v.__dict__ for k,v in players.items()},"last_dates":last_dates,"h2h":h2h,
         "global_elo":global_elo or {},"cursor":int(cursor),"active_seasons":active_seasons or {}
@@ -1096,7 +1172,7 @@ def load_state():
     try:
         with CHECKPOINT.open("rb") as f:
             ck=pickle.load(f)
-        return ck if ck.get("version",0)>=5 else None
+        return ck if ck.get("version",0)>=8 else None
     except Exception: return None
 
 
@@ -1109,7 +1185,7 @@ def main():
     if COMPLETE_MARKER.exists():
         print("=== BACKTEST ALREADY COMPLETE ===")
         return
-    print("=== SOCCER BACKTEST V5 / DEEP PLAYER / CLUB FRIENDLIES ===")
+    print("=== SOCCER BACKTEST V8 FINAL / DEEP PLAYER / CLUB FRIENDLIES ===")
     print("Football-Data: results+closing odds | Understat: xG | SofaScore: players/MOM/friendlies")
     print(f"Optimization target: {OPTIMIZATION_TARGET*100:.0f}% (target only; no accuracy guarantee) | Club friendlies: {INCLUDE_CLUB_FRIENDLIES}")
     matches=load_matches(); print(f"Matches loaded: {len(matches):,}")
@@ -1338,7 +1414,7 @@ def main():
 
     if cursor>=len(matches):
         # Durable completion marker: scheduled runners exit instead of restarting from scratch.
-        Path("BACKTEST_COMPLETE_V5").write_text(
+        Path("BACKTEST_COMPLETE_V8").write_text(
             f"completed_at={datetime.now(timezone.utc).isoformat()}\n"
             f"groups={len(done)}\n"
             f"matches={len(results)}\n", encoding="utf-8"
