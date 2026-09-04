@@ -372,6 +372,8 @@ def load_sofascore_friendlies(target_teams):
     data=get_json(f"{base}/unique-tournament/{FRIENDLY_TOURNAMENT_ID}/seasons",seasons_cache)
     seasons=data.get("seasons",[]) if isinstance(data,dict) else []
     target={team_key(x) for x in target_teams if x}
+    if not target:
+        return [], []
     rows=[]; cov=[]
     seen=set()
     for season_obj in seasons:
@@ -442,7 +444,9 @@ def load_matches():
         if cl: frames.append(pd.DataFrame(cl))
         if el: frames.append(pd.DataFrame(el))
 
-    # DFB-Pokal: only matches involving clubs observed in Bundesliga/2.Bundesliga are retained.
+    # DFB-Pokal: retain ties involving clubs observed in the Bundesliga ecosystem.
+    # The source may not provide 2.Bundesliga as a separate feed, so we use the
+    # observed German top-flight club universe as the conservative partial scope.
     german_teams=set()
     for f in frames:
         if "League" in f.columns and f["League"].isin(["D1"]).any():
@@ -1125,7 +1129,7 @@ def main():
     if COMPLETE_MARKER.exists():
         print("=== BACKTEST ALREADY COMPLETE ===")
         return
-    print("=== SOCCER BACKTEST FINAL / MULTI-SOURCE ===")
+    print("=== SOCCER BACKTEST V5 / DEEP PLAYER / CLUB FRIENDLIES ===")
     print("Football-Data: results+closing odds | Understat: xG | SofaScore: players/MOM/friendlies")
     print(f"Optimization target: {OPTIMIZATION_TARGET*100:.0f}% (target only; no accuracy guarantee) | Club friendlies: {INCLUDE_CLUB_FRIENDLIES}")
     matches=load_matches(); print(f"Matches loaded: {len(matches):,}")
@@ -1332,7 +1336,7 @@ def main():
 
     if cursor>=len(matches):
         # Durable completion marker: scheduled runners exit instead of restarting from scratch.
-        Path("BACKTEST_COMPLETE_V4").write_text(
+        Path("BACKTEST_COMPLETE_V5").write_text(
             f"completed_at={datetime.now(timezone.utc).isoformat()}\n"
             f"groups={len(done)}\n"
             f"matches={len(results)}\n", encoding="utf-8"
