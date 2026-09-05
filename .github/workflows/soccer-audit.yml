@@ -35,6 +35,27 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Apply source compatibility hardening
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('backtest.py')
+          s=p.read_text(encoding='utf-8')
+          anchor='''    aliases={\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
+          replacement='''    aliases={\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united",\n        "manchester united fc":"manchester united","man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers",\n        "leicester":"leicester city","leeds":"leeds united","brighton":"brighton hove albion","sheffield utd":"sheffield united",\n        "norwich":"norwich city","qpr":"queens park rangers","west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
+          if anchor not in s: raise SystemExit('[PATCH] team_key alias anchor not found')
+          s=s.replace(anchor,replacement,1)
+          old='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return ka==kb or ka in kb or kb in ka\n'''
+          new='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return bool(ka) and bool(kb) and ka == kb\n'''
+          if old in s: s=s.replace(old,new,1)
+          elif 'def same_team(a,b):' in s and 'ka in kb' in s: s=re.sub(r'def same_team\\(a,b\\):\\n(?:    .*\\n){2}',new,s,count=1)
+          else: raise SystemExit('[PATCH] same_team implementation not found')
+          p.write_text(s,encoding='utf-8')
+          print('[PATCH] source compatibility hardening applied')
+          PY
+
       - name: Compile and smoke test
         run: |
           set -euo pipefail
