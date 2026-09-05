@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Soccer Backtest V8 FINAL / Multi-Source / Leak-Safe
+Soccer Backtest V9 FINAL / Multi-Source / Leak-Safe
 
 用途ごとに最適なソースを分離して検証する。
 
@@ -31,21 +31,22 @@ SofaScore             : 過去選手rating / player stats / 実績MOM
 
 OUTPUT
 ------
-backtest_results.csv       1X2全試合
-backtest_scores.csv        exact score Top-3
-backtest_mom.csv           MOM候補 Top-4
-overall_summary.csv        総合1X2
-league_summary.csv         リーグ別
-season_summary.csv         シーズン別
-confidence_summary.csv     信頼度別
-score_summary.csv          スコア精度
-mom_summary.csv            MOM Top1/Top4
-model_comparison.csv       validation model比較
-data_coverage.csv         ソース取得率
-feature_importance.csv     ExtraTrees重要度
+backtest_results_v9.csv       1X2全試合
+backtest_scores_v9.csv        exact score Top-3
+backtest_mom_v9.csv           MOM候補 Top-4
+overall_summary_v9.csv        総合1X2
+league_summary_v9.csv         リーグ別
+season_summary_v9.csv         シーズン別
+confidence_summary_v9.csv     信頼度別
+score_summary_v9.csv          スコア精度
+mom_summary_v9.csv            MOM Top1/Top4
+model_comparison_v9.csv       validation model比較
+data_coverage_v9.csv         ソース取得率
+feature_importance_v9.csv     ExtraTrees重要度
 """
 from __future__ import annotations
 
+import gzip
 import json
 import math
 import os
@@ -99,8 +100,8 @@ FD_CACHE = CACHE / "football_data"
 UNDERSTAT_CACHE = CACHE / "understat"
 SOFA_CACHE = CACHE / "sofascore"
 OPENFOOTBALL_CACHE = Path(os.getenv("OPENFOOTBALL_CACHE", str(CACHE / "openfootball")))
-CHECKPOINT = ROOT / "backtest_checkpoint_v8.pkl"
-COMPLETE_MARKER = ROOT / "BACKTEST_COMPLETE_V8"
+CHECKPOINT = ROOT / "backtest_checkpoint_v9.pkl.gz"
+COMPLETE_MARKER = ROOT / "BACKTEST_COMPLETE_V9"
 
 # Optimization target: maximize out-of-sample quality as far as the data allows.
 # "100%" is an optimization target, not a promise of perfect real-world accuracy.
@@ -827,70 +828,87 @@ def _chronological_folds(n, min_train=140, n_folds=3):
     return out
 
 
-def _fit_sample_weight(model,X,y,w):
-    try:
-        return model.fit(X,y,sample_weight=w)
-    except TypeError:
-        return model.fit(X,y)
+def _fit_sample_weight(model, X, y, w):
+    """Fit supported estimators with recency weights without silently dropping them."""
+    if isinstance(model, Pipeline):
+        return model.fit(X, y, clf__sample_weight=w)
+    return model.fit(X, y, sample_weight=w)
 
 
 def fit_ensemble(hist):
-    if len(hist)<MIN_TRAIN: return None
-    d=hist[-MAX_TRAIN:]
-    X=np.vstack([z["x"] for z in d]); y=np.asarray([z["y"] for z in d],dtype=int)
-    folds=_chronological_folds(len(y),min_train=max(140,MIN_TRAIN//2),n_folds=3)
-    if not folds: return None
-    oos={name:[] for name in build_models()}; yy=[]; losses=defaultdict(list)
-    for vs,ve in folds:
-        Xtr,ytr=X[:vs],y[:vs]
-        ages=np.arange(vs)[::-1]
-        w=np.exp(-np.log(2)*ages/650.0)
-        for name in build_models():
+    if len(hist) < MIN_TRAIN:
+        return None
+    d = hist[-MAX_TRAIN:]
+    X = np.vstack([z["x"] for z in d])
+    y = np.asarray([z["y"] for z in d], dtype=int)
+    folds = _chronological_folds(len(y), min_train=max(140, MIN_TRAIN // 2), n_folds=3)
+    if not folds:
+        return None
+
+    model_names = list(build_models().keys())
+    oos = {name: [] for name in model_names}
+    oos_y = {name: [] for name in model_names}
+    losses = defaultdict(list)
+
+    for vs, ve in folds:
+        Xtr, ytr = X[:vs], y[:vs]
+        ages = np.arange(vs)[::-1]
+        w = np.exp(-np.log(2) * ages / 650.0)
+        for name in model_names:
             try:
-                m=build_models()[name]
-                _fit_sample_weight(m,Xtr,ytr,w)
-                pp=np.vstack([np.asarray(m.predict_proba(z.reshape(1,-1))[0],dtype=float) for z in X[vs:ve]])
-                aligned=[]
-                for q in pp:
-                    a=np.zeros(3)
-                    for i,c in enumerate(m.classes_):
-                        if int(c) in (0,1,2): a[int(c)]=q[i]
+                m = build_models()[name]
+                _fit_sample_weight(m, Xtr, ytr, w)
+                raw = m.predict_proba(X[vs:ve])
+                aligned = []
+                for q in raw:
+                    a = np.zeros(3, dtype=float)
+                    for i, c in enumerate(m.classes_):
+                        if int(c) in (0, 1, 2):
+                            a[int(c)] = q[i]
                     aligned.append(norm3(a))
-                aligned=np.vstack(aligned)
+                aligned = np.vstack(aligned)
+                yy_fold = y[vs:ve].copy()
                 oos[name].append(aligned)
-                losses[name].append(float(log_loss(y[vs:ve],aligned,labels=[0,1,2])))
+                oos_y[name].append(yy_fold)
+                losses[name].append(float(log_loss(yy_fold, aligned, labels=[0,1,2])))
             except Exception as e:
                 print(f"[WARN] OOS {name}: {e}")
-        yy.extend(y[vs:ve].tolist())
-    yy=np.asarray(yy,dtype=int)
-    val={n:float(np.mean(v)) for n,v in losses.items() if v}
-    if not val: return None
-    names=list(val)
-    raw=np.exp(-(np.asarray([val[n] for n in names])-min(val.values()))/.08)
-    raw=np.clip(raw,.08,.70); raw/=raw.sum()
-    temps={}
+
+    val = {n: float(np.mean(v)) for n, v in losses.items() if v}
+    if not val:
+        return None
+    names = list(val)
+    raw = np.exp(-(np.asarray([val[n] for n in names]) - min(val.values())) / .08)
+    raw = np.clip(raw, .08, .70)
+    raw /= raw.sum()
+
+    temps = {}
     for n in names:
         try:
-            pp=np.vstack(oos[n])
-            best_t=(1.0,log_loss(yy,pp,labels=[0,1,2]))
-            for t in np.arange(.70,1.51,.05):
-                cal=np.vstack([norm3(np.exp(np.log(np.maximum(q,1e-12))/t)) for q in pp])
-                ll=log_loss(yy,cal,labels=[0,1,2])
-                if ll<best_t[1]: best_t=(float(t),float(ll))
-            temps[n]=best_t[0]
+            pp = np.vstack(oos[n])
+            yy = np.concatenate(oos_y[n]).astype(int)
+            best_t = (1.0, log_loss(yy, pp, labels=[0,1,2]))
+            for t in np.arange(.70, 1.51, .05):
+                cal = np.vstack([norm3(np.exp(np.log(np.maximum(q, 1e-12)) / t)) for q in pp])
+                ll = log_loss(yy, cal, labels=[0,1,2])
+                if ll < best_t[1]:
+                    best_t = (float(t), float(ll))
+            temps[n] = best_t[0]
         except Exception:
-            temps[n]=1.0
-    fitted={}
-    ages=np.arange(len(y))[::-1]
-    w=np.exp(-np.log(2)*ages/650.0)
+            temps[n] = 1.0
+
+    fitted = {}
+    ages = np.arange(len(y))[::-1]
+    w = np.exp(-np.log(2) * ages / 650.0)
     for n in names:
         try:
-            m=build_models()[n]
-            _fit_sample_weight(m,X,y,w)
-            fitted[n]=m
+            m = build_models()[n]
+            _fit_sample_weight(m, X, y, w)
+            fitted[n] = m
         except Exception as e:
             print(f"[WARN] final fit {n}: {e}")
-    return {"models":fitted,"weights":dict(zip(names,raw)),"validation_logloss":val,"temperatures":temps,"folds":folds}
+    return {"models": fitted, "weights": dict(zip(names, raw)),
+            "validation_logloss": val, "temperatures": temps, "folds": folds}
 
 
 def pred_ml(bundle,x):
@@ -1105,42 +1123,41 @@ def sofa_event(event_id):
     return lineups,details
 
 
-def actual_mom(details,lineups):
-    if isinstance(details,dict):
-        for key in ("bestPlayer","manOfTheMatch","playerOfTheMatch","motm"):
-            v=details.get(key)
-            if isinstance(v,dict):
-                n=v.get("name") or v.get("player",{}).get("name")
-                if n: return str(n),"explicit"
-            if isinstance(v,str) and v: return v,"explicit"
-        found=[]
+def actual_mom(details, lineups):
+    """Return only an explicitly reported official MOTM/MOM label.
+
+    A same-match highest-rating fallback is deliberately not treated as the official
+    target; doing so would contaminate MOM evaluation with a proxy label.
+    """
+    if isinstance(details, dict):
+        for key in ("bestPlayer", "manOfTheMatch", "playerOfTheMatch", "motm"):
+            v = details.get(key)
+            if isinstance(v, dict):
+                n = v.get("name") or v.get("player", {}).get("name")
+                if n:
+                    return str(n), "explicit"
+            if isinstance(v, str) and v:
+                return v, "explicit"
+        found = []
         def walk(o):
-            if isinstance(o,dict):
-                for k,v in o.items():
-                    kl=str(k).lower()
-                    if "manofthematch" in kl or kl in ("motm","playerofthematch","bestplayer"):
-                        if isinstance(v,dict):
-                            n=v.get("name") or v.get("player",{}).get("name")
-                            if n: found.append(str(n))
-                        elif isinstance(v,str): found.append(v)
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    kl = str(k).lower()
+                    if "manofthematch" in kl or kl in ("motm", "playerofthematch", "bestplayer"):
+                        if isinstance(v, dict):
+                            n = v.get("name") or v.get("player", {}).get("name")
+                            if n:
+                                found.append(str(n))
+                        elif isinstance(v, str) and v:
+                            found.append(v)
                     walk(v)
-            elif isinstance(o,list):
-                for v in o: walk(v)
+            elif isinstance(o, list):
+                for v in o:
+                    walk(v)
         walk(details)
-        if found: return found[0],"explicit"
-    # Fallback: highest-rated player with meaningful minutes from the same-match lineup.
-    # This is used only as the realized label after prediction; it is never a pre-match feature.
-    best=None
-    if isinstance(lineups,dict):
-        for side in ("home","away"):
-            block=lineups.get(side,{})
-            for item in (block.get("players",[]) if isinstance(block,dict) else []):
-                st=item.get("statistics",{}) or {}; p=item.get("player",{}) or {}
-                n=p.get("name"); r=sf(st.get("rating")); mins=stat_value(st,"minutesPlayed","minutes")
-                if n and np.isfinite(r) and mins>=30:
-                    if best is None or r>best[0]: best=(r,str(n))
-    if best is not None: return best[1],"highest_rating_fallback"
-    return None,"unavailable"
+        if found:
+            return found[0], "explicit"
+    return None, "unavailable"
 
 
 def mom_score(p, winp, elo, opp):
@@ -1155,25 +1172,51 @@ def mom_score(p, winp, elo, opp):
 # =========================
 # CHECKPOINT
 # =========================
-def save_state(done,results,scores,moms,model_rows,coverage,histories,bundles,blends,leagues,players,last_dates,h2h,global_elo=None,cursor=0,active_seasons=None):
-    tmp=CHECKPOINT.with_suffix(".tmp")
-    payload={
-        "version":8,"done":list(done),"results":results,"scores":scores,"moms":moms,"model_rows":model_rows,"coverage":coverage,
-        "histories":dict(histories),"bundles":bundles,"blends":dict(blends),"leagues":leagues,
-        "players":{k:v.__dict__ for k,v in players.items()},"last_dates":last_dates,"h2h":h2h,
-        "global_elo":global_elo or {},"cursor":int(cursor),"active_seasons":active_seasons or {}
+def save_state(done, results, scores, moms, model_rows, coverage, histories, bundles, blends, leagues, players, last_dates, h2h, global_elo=None, cursor=0, active_seasons=None):
+    """Persist resumable state in a compressed, compact checkpoint.
+
+    Results are retained for lossless resume, while large historical training buffers are
+    capped at MAX_TRAIN because fit_ensemble never consumes older rows. Model bundles are
+    intentionally not serialized; they are deterministic from the retained history and
+    are rebuilt after resume, keeping the checkpoint small and portable.
+    """
+    tmp = CHECKPOINT.with_suffix(".tmp")
+    compact_histories = {str(k): list(v[-MAX_TRAIN:]) for k, v in histories.items()}
+    compact_h2h = {k: list(v[-8:]) for k, v in h2h.items()}
+    payload = {
+        "version": 9,
+        "done": list(done),
+        "results": results,
+        "scores": scores,
+        "moms": moms,
+        "model_rows": model_rows,
+        "coverage": coverage,
+        "histories": compact_histories,
+        "blends": dict(blends),
+        "leagues": leagues,
+        "players": {k: v.__dict__ for k, v in players.items()},
+        "last_dates": last_dates,
+        "h2h": compact_h2h,
+        "global_elo": global_elo or {},
+        "cursor": int(cursor),
+        "active_seasons": active_seasons or {},
     }
-    with tmp.open("wb") as f: pickle.dump(payload,f,pickle.HIGHEST_PROTOCOL)
+    with gzip.open(tmp, "wb", compresslevel=6) as f:
+        pickle.dump(payload, f, pickle.HIGHEST_PROTOCOL)
     tmp.replace(CHECKPOINT)
 
 
+
 def load_state():
-    if not CHECKPOINT.exists(): return None
+    if not CHECKPOINT.exists():
+        return None
     try:
-        with CHECKPOINT.open("rb") as f:
-            ck=pickle.load(f)
-        return ck if ck.get("version",0)>=8 else None
-    except Exception: return None
+        with gzip.open(CHECKPOINT, "rb") as f:
+            ck = pickle.load(f)
+        return ck if ck.get("version", 0) >= 9 else None
+    except Exception as e:
+        print(f"[WARN] checkpoint unreadable; starting fresh: {e}")
+        return None
 
 
 # =========================
@@ -1185,7 +1228,7 @@ def main():
     if COMPLETE_MARKER.exists():
         print("=== BACKTEST ALREADY COMPLETE ===")
         return
-    print("=== SOCCER BACKTEST V8 FINAL / DEEP PLAYER / CLUB FRIENDLIES ===")
+    print("=== SOCCER BACKTEST V9 FINAL / DEEP PLAYER / CLUB FRIENDLIES ===")
     print("Football-Data: results+closing odds | Understat: xG | SofaScore: players/MOM/friendlies")
     print(f"Optimization target: {OPTIMIZATION_TARGET*100:.0f}% (target only; no accuracy guarantee) | Club friendlies: {INCLUDE_CLUB_FRIENDLIES}")
     matches=load_matches(); print(f"Matches loaded: {len(matches):,}")
@@ -1213,7 +1256,7 @@ def main():
     if ck:
         done=set(ck.get("done",[])); results=ck.get("results",[]); scores=ck.get("scores",[]); moms=ck.get("moms",[])
         model_rows=ck.get("model_rows",[]); coverage=ck.get("coverage",[]); histories=defaultdict(list,ck.get("histories",{}))
-        bundles=ck.get("bundles",{}); blends=dict(ck.get("blends",{})); leagues=ck.get("leagues",{})
+        bundles={}; blends=dict(ck.get("blends",{})); leagues=ck.get("leagues",{})
         players=defaultdict(Player)
         for k,v in ck.get("players",{}).items():
             p=Player(); p.__dict__.update(v); players[k]=p
@@ -1359,35 +1402,35 @@ def main():
     if not rdf.empty:
         y=rdf.Actual.map({"H":0,"D":1,"A":2}).to_numpy(); p=rdf[["HomeProb","DrawProb","AwayProb"]].to_numpy()
         br=float(np.mean((p-np.eye(3)[y])**2))
-        pd.DataFrame([{"Matches":len(rdf),"Accuracy":accuracy_score(y,np.argmax(p,1)),"LogLoss":log_loss(y,p,labels=[0,1,2]),"Brier":br,"MeanConfidence":rdf.Confidence.mean()}]).to_csv(ROOT/"overall_summary.csv",index=False)
-        rdf.to_csv(ROOT/"backtest_results.csv",index=False,encoding="utf-8-sig")
+        pd.DataFrame([{"Matches":len(rdf),"Accuracy":accuracy_score(y,np.argmax(p,1)),"LogLoss":log_loss(y,p,labels=[0,1,2]),"Brier":br,"MeanConfidence":rdf.Confidence.mean()}]).to_csv(ROOT/"overall_summary_v9.csv",index=False)
+        rdf.to_csv(ROOT/"backtest_results_v9.csv",index=False,encoding="utf-8-sig")
         rows=[]
         for lg,g in rdf.groupby("League"):
             gy=g.Actual.map({"H":0,"D":1,"A":2}).to_numpy(); gp=g[["HomeProb","DrawProb","AwayProb"]].to_numpy()
             rows.append({"League":lg,"Matches":len(g),"Accuracy":g.Correct.mean(),"LogLoss":log_loss(gy,gp,labels=[0,1,2]),"MeanConfidence":g.Confidence.mean()})
-        pd.DataFrame(rows).to_csv(ROOT/"league_summary.csv",index=False)
+        pd.DataFrame(rows).to_csv(ROOT/"league_summary_v9.csv",index=False)
         rows=[]
         for s,g in rdf.groupby("Season"):
             gy=g.Actual.map({"H":0,"D":1,"A":2}).to_numpy(); gp=g[["HomeProb","DrawProb","AwayProb"]].to_numpy()
             rows.append({"Season":s,"Matches":len(g),"Accuracy":g.Correct.mean(),"LogLoss":log_loss(gy,gp,labels=[0,1,2]),"MeanConfidence":g.Confidence.mean()})
-        pd.DataFrame(rows).to_csv(ROOT/"season_summary.csv",index=False)
+        pd.DataFrame(rows).to_csv(ROOT/"season_summary_v9.csv",index=False)
         rows=[]
         for (lg,sn),g in rdf.groupby(["League","Season"]):
             gy=g.Actual.map({"H":0,"D":1,"A":2}).to_numpy(); gp=g[["HomeProb","DrawProb","AwayProb"]].to_numpy()
             rows.append({"League":lg,"Season":sn,"Matches":len(g),"Accuracy":g.Correct.mean(),"LogLoss":log_loss(gy,gp,labels=[0,1,2]),"MeanConfidence":g.Confidence.mean()})
-        pd.DataFrame(rows).to_csv(ROOT/"competition_season_summary.csv",index=False)
-        pd.DataFrame([{"Threshold":t,"Matches":int((rdf.Confidence>=t).sum()),"Accuracy":rdf.loc[rdf.Confidence>=t,"Correct"].mean()} for t in [.50,.55,.60,.65,.70,.75,.80]]).to_csv(ROOT/"confidence_summary.csv",index=False)
+        pd.DataFrame(rows).to_csv(ROOT/"competition_season_summary_v9.csv",index=False)
+        pd.DataFrame([{"Threshold":t,"Matches":int((rdf.Confidence>=t).sum()),"Accuracy":rdf.loc[rdf.Confidence>=t,"Correct"].mean()} for t in [.50,.55,.60,.65,.70,.75,.80]]).to_csv(ROOT/"confidence_summary_v9.csv",index=False)
     if not sdf.empty:
-        sdf.to_csv(ROOT/"backtest_scores.csv",index=False,encoding="utf-8-sig")
+        sdf.to_csv(ROOT/"backtest_scores_v9.csv",index=False,encoding="utf-8-sig")
         grp=sdf.groupby(["League","Season","Date","HomeTeam","AwayTeam"])
-        pd.DataFrame([{"ScoreTop1HitRate":sdf[sdf.Rank==1].Hit.mean(),"ScoreTop3HitRate":grp.Hit.max().mean(),"MeanAbsoluteGoalError":sdf.AbsGoalError.mean()}]).to_csv(ROOT/"score_summary.csv",index=False)
+        pd.DataFrame([{"ScoreTop1HitRate":sdf[sdf.Rank==1].Hit.mean(),"ScoreTop3HitRate":grp.Hit.max().mean(),"MeanAbsoluteGoalError":sdf.AbsGoalError.mean()}]).to_csv(ROOT/"score_summary_v9.csv",index=False)
     if not mdf.empty:
-        mdf.to_csv(ROOT/"backtest_mom.csv",index=False,encoding="utf-8-sig")
+        mdf.to_csv(ROOT/"backtest_mom_v9.csv",index=False,encoding="utf-8-sig")
         grp=mdf.groupby(["League","Season","Date","HomeTeam","AwayTeam"])
-        pd.DataFrame([{"MOMTop1HitRate":mdf[mdf.Rank==1].Hit.mean(),"MOMTop4HitRate":grp.Hit.max().mean(),"EvaluatedMatches":grp.ngroups,"Rows":len(mdf)}]).to_csv(ROOT/"mom_summary.csv",index=False)
-    if not modf.empty: modf.to_csv(ROOT/"model_comparison.csv",index=False)
+        pd.DataFrame([{"MOMTop1HitRate":mdf[mdf.Rank==1].Hit.mean(),"MOMTop4HitRate":grp.Hit.max().mean(),"EvaluatedMatches":grp.ngroups,"Rows":len(mdf)}]).to_csv(ROOT/"mom_summary_v9.csv",index=False)
+    if not modf.empty: modf.to_csv(ROOT/"model_comparison_v9.csv",index=False)
     cov=under_cov+coverage+FRIENDLY_COVERAGE
-    if cov: pd.DataFrame(cov).to_csv(ROOT/"data_coverage.csv",index=False)
+    if cov: pd.DataFrame(cov).to_csv(ROOT/"data_coverage_v9.csv",index=False)
 
     # Detailed player-by-player profile and data-derived playing style.
     profiles=[]
@@ -1396,25 +1439,25 @@ def main():
             profiles.append(ps.profile("ALL",tm,name))
     if profiles:
         pdf=pd.DataFrame(profiles).sort_values(["League","Team","Minutes"],ascending=[True,True,False])
-        pdf.to_csv(ROOT/"player_profiles.csv",index=False,encoding="utf-8-sig")
+        pdf.to_csv(ROOT/"player_profiles_v9.csv",index=False,encoding="utf-8-sig")
         # Compact team-style snapshot built only from pre-match accumulated player history.
         ts=[]
         teams=sorted({tm for (tm,_),ps in players.items() if ps.matches>0})
         for tm in teams:
             vals=team_player_features("ALL",tm,players)
             ts.append({"League":"ALL","Team":tm,**{f"PlayerStyle_{k}":v for k,v in zip(PLAYER_FEATURE_BASE,vals)}})
-        if ts: pd.DataFrame(ts).to_csv(ROOT/"team_player_style.csv",index=False,encoding="utf-8-sig")
+        if ts: pd.DataFrame(ts).to_csv(ROOT/"team_player_style_v9.csv",index=False,encoding="utf-8-sig")
 
     # ExtraTrees feature importance from latest fitted bundle, when available.
     for code,b in bundles.items():
         m=b.get("models",{}).get("ExtraTrees") if isinstance(b,dict) else None
         if m is not None and hasattr(m,"feature_importances_"):
             fi=pd.DataFrame({"League":code,"Feature":FEATURE_NAMES,"Importance":m.feature_importances_}).sort_values("Importance",ascending=False)
-            fi.to_csv(ROOT/"feature_importance.csv",index=False); break
+            fi.to_csv(ROOT/"feature_importance_v9.csv",index=False); break
 
     if cursor>=len(matches):
         # Durable completion marker: scheduled runners exit instead of restarting from scratch.
-        Path("BACKTEST_COMPLETE_V8").write_text(
+        COMPLETE_MARKER.write_text(
             f"completed_at={datetime.now(timezone.utc).isoformat()}\n"
             f"groups={len(done)}\n"
             f"matches={len(results)}\n", encoding="utf-8"
@@ -1422,14 +1465,16 @@ def main():
         try: CHECKPOINT.unlink()
         except Exception: pass
 
+    complete = cursor >= len(matches)
     print("="*62)
-    print("BACKTEST FINISHED")
+    print("BACKTEST COMPLETE" if complete else "BACKTEST PAUSED / CHECKPOINT SAVED")
     print(f"Runtime: {(time.time()-START)/60:.2f} min")
-    if not rdf.empty: print(f"1X2 Accuracy: {rdf.Correct.mean()*100:.2f}% | LogLoss: {log_loss(y,p,labels=[0,1,2]):.5f}")
+    print(f"Progress: {cursor:,}/{len(matches):,} ({100*cursor/max(1,len(matches)):.2f}%)")
+    if not rdf.empty: print(f"1X2 Accuracy (processed rows): {rdf.Correct.mean()*100:.2f}% | LogLoss: {log_loss(y,p,labels=[0,1,2]):.5f}")
     if not sdf.empty:
-        print(f"Score Top-1: {sdf[sdf.Rank==1].Hit.mean()*100:.2f}% | Top-3: {sdf.groupby(['League','Season','Date','HomeTeam','AwayTeam']).Hit.max().mean()*100:.2f}%")
+        print(f"Score Top-1 (processed rows): {sdf[sdf.Rank==1].Hit.mean()*100:.2f}% | Top-3: {sdf.groupby(['League','Season','Date','HomeTeam','AwayTeam']).Hit.max().mean()*100:.2f}%")
     if not mdf.empty:
-        print(f"MOM Top-1: {mdf[mdf.Rank==1].Hit.mean()*100:.2f}% | Top-4: {mdf.groupby(['League','Season','Date','HomeTeam','AwayTeam']).Hit.max().mean()*100:.2f}%")
+        print(f"MOM Top-1 (processed rows): {mdf[mdf.Rank==1].Hit.mean()*100:.2f}% | Top-4: {mdf.groupby(['League','Season','Date','HomeTeam','AwayTeam']).Hit.max().mean()*100:.2f}%")
     else: print("MOM: SofaScore historical event/player data could not be matched.")
     print("="*62)
 
