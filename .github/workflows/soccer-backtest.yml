@@ -1,4 +1,4 @@
-name: Soccer Backtest Auto
+name: Soccer Backtest V9 - Strong Auto Resume
 
 on:
   workflow_dispatch:
@@ -6,49 +6,83 @@ on:
     - cron: "*/30 * * * *"
 
 permissions:
-  contents: write
+  contents: read
+  actions: write
 
 concurrency:
-  group: soccer-backtest-auto
+  group: soccer-backtest-v9-auto
   cancel-in-progress: false
 
 jobs:
   backtest:
     runs-on: ubuntu-latest
     timeout-minutes: 29
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run backtest
+      - name: Preflight tests
+        run: |
+          python -m py_compile backtest.py
+          python tests/smoke_test.py
+
+      - name: Restore latest V9 automatic state
         env:
-          RUNTIME_LIMIT_SECONDS: "1620"
-          FOTMOB_CACHE_ONLY: "True"
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          python backtest.py
+          set -euo pipefail
+          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" \
+            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
+          if [ -n "${ARTIFACT_ID}" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state-v9.zip
+            unzip -o /tmp/state-v9.zip -d .
+          fi
 
-      - name: Save checkpoint and results
+      - name: Run / resume V9 chronological backtest
+        env:
+          MAX_RUNTIME_SECONDS: "1620"
+          ENABLE_SOFASCORE: "1"
+          SOFASCORE_DETAILS: "0"
+          ENABLE_UNDERSTAT: "1"
+          INCLUDE_CLUB_FRIENDLIES: "1"
+          FRIENDLY_MIN_YEAR: "2010"
+          FRIENDLY_MAX_PAGES: "250"
+        run: python backtest.py
+
+      - name: Save V9 automatic state artifact
         if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: soccer-backtest-state-v9
+          path: |
+            backtest_checkpoint_v9.pkl.gz
+            BACKTEST_COMPLETE_V9
+            cache/
+            *_v9.csv
+          if-no-files-found: ignore
+          retention-days: 90
+          compression-level: 6
+
+      - name: Disable schedule after full completion
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-
-          if ! git diff --cached --quiet; then
-            git commit -m "auto: soccer backtest checkpoint"
-            git push
-          else
-            echo "No changes to save."
+          if [ -f BACKTEST_COMPLETE_V9 ]; then
+            gh workflow disable "${{ github.workflow }}" --repo "${{ github.repository }}" || true
           fi
