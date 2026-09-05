@@ -1,18 +1,11 @@
 name: Soccer V12 Autonomous Research AI
 
 on:
-  schedule:
-    - cron: '47 */6 * * *'
+  workflow_run:
+    workflows:
+      - Soccer Backtest V12 - Hardened Production
+    types: [completed]
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'v12_auto_research.py'
-      - 'engine/**'
-      - 'backtest_results_v12.csv'
-      - 'overall_summary_v12.csv'
-      - 'league_season_summary_v12.csv'
-      - '.github/workflows/soccer-research-ai.yml'
 
 permissions:
   contents: write
@@ -23,31 +16,60 @@ concurrency:
 
 jobs:
   research:
-    name: V12 autonomous evaluation and research
-    runs-on: ubuntu-latest
+    name: V12 autonomous evaluation and research on Mac
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 60
     env:
       MAX_RUNTIME_SECONDS: '3300'
       CANDIDATE_RETRAIN_EVERY: '150'
       CANDIDATE_MIN_TRAIN: '260'
       PYTHONUNBUFFERED: '1'
+      RESEARCH_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+      RESEARCH_TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+      RESEARCH_RUNNER: macOS-self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
-          cache: pip
+          fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Verify Mac runner
         run: |
+          set -euo pipefail
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "x86_64"
+          python3 --version
+          echo "Mac self-hosted research runner verified"
+
+      - name: Setup Python environment
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv-research
+          . .venv-research/bin/activate
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
 
+      - name: Research input integrity gate
+        run: |
+          set -euo pipefail
+          test -s BACKTEST_COMPLETE_V12
+          test -s backtest_results_v12.csv
+          test -s overall_summary_v12.csv
+          python3 - <<'PY'
+          import pandas as pd
+          p=pd.read_csv('backtest_results_v12.csv',low_memory=False)
+          need=['HomeProbV12','DrawProbV12','AwayProbV12','PredictedV12','Actual']
+          missing=[c for c in need if c not in p.columns]
+          if missing: raise SystemExit(f'missing V12 columns: {missing}')
+          if len(p) < 100: raise SystemExit(f'suspiciously small V12 output: {len(p)}')
+          print(f'research input integrity PASS rows={len(p)}')
+          PY
+
       - name: Preflight
         run: |
+          set -euo pipefail
+          . .venv-research/bin/activate
           python -m py_compile v12_auto_research.py v12_runner.py engine/*.py
           python - <<'PY'
           import ast,glob
@@ -57,10 +79,14 @@ jobs:
           PY
 
       - name: Run V12 autonomous research
-        run: python v12_auto_research.py
+        run: |
+          set -euo pipefail
+          . .venv-research/bin/activate
+          python v12_auto_research.py
 
       - name: Validate research outputs
         run: |
+          set -euo pipefail
           test -s evaluation.json
           test -s failure_analysis.json
           test -s condition_analysis_v12.json
@@ -68,7 +94,7 @@ jobs:
           test -s candidate_evaluations.json
           test -s model_comparison_v12.json
           test -s model_registry.json
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           p=json.load(open('candidate_evaluations.json',encoding='utf-8'))
           assert p.get('leak_policy') == 'prior_rows_only'
@@ -79,12 +105,18 @@ jobs:
           PY
 
       - name: Save research state
+        if: always()
         run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add research_state.json research_history.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
-          git diff --cached --quiet || git commit -m 'Update soccer V12 autonomous research state'
-          git push
+          if git diff --cached --quiet; then
+            echo '[COMMIT] no research-state changes.'
+          else
+            git commit -m 'Update soccer V12 autonomous research state'
+            git push
+          fi
 
       - name: Upload research artifacts
         if: always()
