@@ -94,6 +94,7 @@ jobs:
           test -s candidate_evaluations.json
           test -s model_comparison_v12.json
           test -s model_registry.json
+          test -s research_manifest.json
           python3 - <<'PY'
           import json
           p=json.load(open('candidate_evaluations.json',encoding='utf-8'))
@@ -101,7 +102,9 @@ jobs:
           assert isinstance(p.get('candidates'),list) and p['candidates']
           c=json.load(open('model_comparison_v12.json',encoding='utf-8'))
           assert c.get('fail_closed') is True
-          print('candidate OOS + fail-closed promotion gate: PASS')
+          m=json.load(open('research_manifest.json',encoding='utf-8'))
+          assert m.get('policy') == 'prior_rows_only'
+          print('candidate OOS + fail-closed promotion gate + provenance: PASS')
           PY
 
       - name: Save research state
@@ -110,7 +113,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add research_state.json research_history.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
+          git add research_state.json research_history.json research_manifest.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
           if git diff --cached --quiet; then
             echo '[COMMIT] no research-state changes.'
           else
@@ -133,5 +136,6 @@ jobs:
             model_registry.json
             research_state.json
             research_history.json
+            research_manifest.json
           if-no-files-found: ignore
           retention-days: 30
