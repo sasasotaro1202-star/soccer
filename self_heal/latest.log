@@ -1,2 +1,3 @@
 No automatic retry required. run=33983904230 conclusion=cancelled attempt=1
 Retrying failed workflow run 33983908689 (Soccer Backtest V12 - Hardened Production), attempt 1
+No automatic retry required. run=33983952366 conclusion=cancelled attempt=1
