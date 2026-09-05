@@ -135,7 +135,7 @@ def build_v12():
         final=_temp(raw,current_temp)
         out_probs.append(final); temps.append(current_temp); weights_out.append(weights); modes.append("stacked_walk_forward")
 
-        # LEAKAGE BARRIER: append current outcome only after prediction is final.
+        # LEAKAGE BARRIER: current outcome is appended only after the prediction is finalized.
         for k in EXPERTS:
             hist_probs[k].append(comps[k]); league_probs[k].setdefault(league,[]).append(comps[k])
         hist_probs["__final__"].append(final)
