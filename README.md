@@ -1,6 +1,6 @@
-# Soccer Backtest V9 FINAL
+# Soccer Backtest V12 FINAL
 
-最終版の時系列リーク防止型サッカーバックテスト。
+時系列リークを厳格に管理した、30分GitHub Actions向けのサッカーバックテスト。
 
 ## 対象
 - 2010-11〜2025-26
@@ -8,44 +8,33 @@
 - J1 / J2 / J3
 - UCL / UEL
 - DFB-Pokal（公開データで取得可能な範囲）
-- 対象クラブのClub Friendlies（SofaScore取得可能な範囲）
+- 対象エコシステムに時系列上すでに参加していたクラブのClub Friendlies
 
-## モデル
-- Closing market probability
-- Competition Elo + global cross-competition Elo
-- Rolling / EMA team form
-- xG / xGA
-- Shots / SOT / corners
-- Home/Away split
-- Rest days
-- H2H
-- Player-history style features
-- Dynamic Poisson + Dixon-Coles
-- Logistic Regression / ExtraTrees / RandomForest / HistGradientBoosting
-- Chronological walk-forward validation
-- Recency weighting
-- Temperature calibration
-- ML / market / Poisson blend optimization
-- MOMは試合前に蓄積された選手履歴だけを候補生成に使用
+## V12の主な改善
+- resume時にgroup/cadence countersを再構築し、途中再開による検証スケジュールの変化を防止
+- DFB-Pokalの対象判定をその試合日以前のBundesliga初出場に限定
+- 過去の選手データに指数減衰を適用し、移籍・離脱後の古い選手状態が現チーム特徴を支配するのを防止
+- MOM候補にも180日間のstaleness guardを適用し、過去所属選手の混入を抑制
+- Logistic Pipelineのsample_weightを正しく適用
+- chronological OOS validationをモデルごとに整合
+- recency weighting + temperature calibration
+- OOS実績だけでML/market/Poisson blendを最適化
+- 未学習期間のfallback予測をblend最適化から除外
+- H2H二重追加を排除
+- 公式MOMが明示された試合だけMOM評価
+- 試合前stateと試合後stateを完全分離
+- クラブ名のcanonical keyを強化し、危険な部分一致を廃止
+- DFB-Pokal / Friendliesの対象クラブ選定を試合日ベースにして将来参加情報の混入を防止
+- checkpointをgzip化し、学習履歴をMAX_TRAIN以内に制限
+- model bundleはcheckpointに保存せずresume時に再構築
+- V12専用checkpoint / artifact / output
+- SAFE STOPとCOMPLETEを明確に分離
+- GitHub Actionsのデータcacheと状態artifactを分離
 
-## V9で修正した点
-- Logistic Pipelineの sample_weight を clf__sample_weight として正しく渡す
-- OOS calibrationでモデルごとのvalidation targetを正しく対応させる
-- H2Hの二重追加を修正
-- 公式MOMが取得できない試合を「最高rating=MOM」として扱わない
-- checkpointをgzip圧縮
-- checkpoint内の学習履歴を最新MAX_TRAINに制限
-- 学習済みmodel bundleをcheckpointに保存せず、Resume時に再構築してサイズを削減
-- V8と別のcheckpoint / artifact / output名を使用
-- Safe Stop時に BACKTEST FINISHED と誤表示しない
-- 完走時だけ BACKTEST_COMPLETE_V9 を作成
-- GitHub ActionsをNode 24系の現行majorへ更新
-- preflight smoke testを追加
+## 評価
+Accuracyだけでなく、LogLoss / Brier / calibration / league-season別精度 / score Top-1/Top-3を確認します。
 
-## 重要
 「100%」は最適化目標であり、精度保証ではありません。
-最終評価は全期間完走後のAccuracy / LogLoss / Brier / calibration / league-season別結果で行います。
 
-## GitHub
-.github/workflows/soccer-backtest.yml を使用してください。
-古いV5/V7/V8のcheckpointはV9では使用しません。
+## Fresh start
+V12は過去のV9/V10/V11 checkpointを再利用せず、履歴を最初から時系列順に再計算します。
