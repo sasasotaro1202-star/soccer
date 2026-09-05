@@ -35,14 +35,40 @@ def main() -> None:
         if marker not in backtest: fail(f"required engine marker missing: {marker}")
     for marker in ("workflow_dispatch","schedule","concurrency:","cancel-in-progress: false","checkpoint","upload-artifact","V12 preflight and integrity gate","py_compile","smoke_test.py","v12_runner.py","soccer-backtest-state-v12"):
         if marker not in workflow: fail(f"workflow hardening marker missing: {marker}")
-    # V12 supports the hardened expert-stacking runner as well as the earlier
-    # adaptive implementation. Keep the audit aligned with the active runner.
     for marker in ("walk-forward","chronological","prior","temperature","fail-closed"):
         if marker.lower() not in runner.lower(): fail(f"V12 runner safeguard marker missing: {marker}")
     if not any(x in runner.lower() for x in ("expert stack", "stacked_walk_forward", "adaptive")):
         fail("V12 runner safeguard marker missing: expert stacking/adaptive mode")
     if "contents: write" not in workflow or "git add" not in workflow or "git push" not in workflow:
         fail("workflow does not persist resumable state/results to the repository")
+
+    # The active V9 feature contract is exactly 136 features. Do not pad or
+    # delete arbitrary columns merely to satisfy a stale expected count.
+    ns = {}
+    exec(compile(backtest, "backtest.py", "exec"), ns, ns)
+    ns["make_feature_names"]()
+    if len(ns["FEATURE_NAMES"]) != 136:
+        fail(f"active V9 feature schema changed unexpectedly: {len(ns['FEATURE_NAMES'])} != 136")
+
+    # Team matching must be exact after explicit canonicalization. Substring
+    # matching can falsely join unrelated teams (e.g. United/Manchester United).
+    same_team = ns["same_team"]
+    for a, b, expected in (
+        ("Manchester United", "Manchester United FC", True),
+        ("Man United", "Manchester United", True),
+        ("Man Utd", "Manchester United", True),
+        ("United", "Manchester United", False),
+        ("City", "Manchester City", False),
+        ("Spurs", "Tottenham Hotspur", True),
+    ):
+        if bool(same_team(a, b)) != expected:
+            fail(f"team canonicalization mismatch: {a!r} vs {b!r} expected={expected}")
+
+    # V12's current result must be appended only after its prediction has been
+    # finalized; this is the explicit meta-layer leakage barrier.
+    if "current outcome is appended only after the prediction" not in runner:
+        fail("V12 current-outcome update barrier missing")
+
     outputs = ["backtest_results_v9.csv","backtest_scores_v9.csv","overall_summary_v9.csv","league_summary_v9.csv","season_summary_v9.csv","confidence_summary_v9.csv","score_summary_v9.csv","mom_summary_v9.csv","model_comparison_v9.csv","data_coverage_v9.csv","feature_importance_v9.csv","backtest_results_v12.csv","overall_summary_v12.csv"]
     for rel in outputs:
         p=ROOT/rel
@@ -65,6 +91,6 @@ def main() -> None:
             if miss: fail(f"V12 output missing columns: {miss}")
             probs=d[["HomeProbV12","DrawProbV12","AwayProbV12"]].to_numpy(float)
             if not np.all(np.isfinite(probs)) or not np.allclose(probs.sum(axis=1),1.0,atol=1e-6): fail("V12 probabilities are not finite normalized 3-way probabilities")
-    print("[AUDIT PASS] V12 syntax, leakage safeguards, workflow persistence, and output integrity checks passed")
+    print("[AUDIT PASS] V12 syntax, 136-feature schema, exact team canonicalization, leakage barriers, workflow persistence, and output integrity checks passed")
 
 if __name__ == "__main__": main()
