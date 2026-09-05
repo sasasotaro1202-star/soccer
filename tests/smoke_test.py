@@ -11,9 +11,9 @@ import backtest as b
 
 b.START = time.time()
 b.make_feature_names()
-# V12 expert stacking added three production features: global_elo_diff,
-# competition_elo_diff, and the friendly-information guards.
-assert len(b.FEATURE_NAMES) == 139, len(b.FEATURE_NAMES)
+# The active backtest.py schema currently contains 136 production features,
+# including global/competition Elo and friendly-information guards.
+assert len(b.FEATURE_NAMES) == 136, len(b.FEATURE_NAMES)
 
 rng = np.random.default_rng(7)
 X = rng.normal(size=(180, len(b.FEATURE_NAMES)))
