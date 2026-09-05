@@ -44,7 +44,7 @@ def main() -> None:
 
     # The active V9 feature contract is exactly 136 features. Do not pad or
     # delete arbitrary columns merely to satisfy a stale expected count.
-    ns = {}
+    ns = {"__name__": "soccer_audit_probe"}
     exec(compile(backtest, "backtest.py", "exec"), ns, ns)
     ns["make_feature_names"]()
     if len(ns["FEATURE_NAMES"]) != 136:
