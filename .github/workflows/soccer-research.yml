@@ -22,7 +22,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Research placeholder check
+      - name: Install dependencies
         run: |
-          echo "Soccer research loop initialized"
-          echo "Future stages: evaluation, candidate models, comparison, checkpoint"
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run research loop
+        run: python research_loop.py
+
+      - name: Save research state
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add research_state.json research_history.json || true
+          git commit -m "Update soccer research state" || true
+          git push || true
