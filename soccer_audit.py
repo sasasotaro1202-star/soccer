@@ -35,8 +35,12 @@ def main() -> None:
         if marker not in backtest: fail(f"required engine marker missing: {marker}")
     for marker in ("workflow_dispatch","schedule","concurrency:","cancel-in-progress: false","checkpoint","upload-artifact","V12 preflight and integrity gate","py_compile","smoke_test.py","v12_runner.py","soccer-backtest-state-v12"):
         if marker not in workflow: fail(f"workflow hardening marker missing: {marker}")
-    for marker in ("walk-forward","chronological","prior","temperature","adaptive","fail-closed"):
+    # V12 supports the hardened expert-stacking runner as well as the earlier
+    # adaptive implementation. Keep the audit aligned with the active runner.
+    for marker in ("walk-forward","chronological","prior","temperature","fail-closed"):
         if marker.lower() not in runner.lower(): fail(f"V12 runner safeguard marker missing: {marker}")
+    if not any(x in runner.lower() for x in ("expert stack", "stacked_walk_forward", "adaptive")):
+        fail("V12 runner safeguard marker missing: expert stacking/adaptive mode")
     if "contents: write" not in workflow or "git add" not in workflow or "git push" not in workflow:
         fail("workflow does not persist resumable state/results to the repository")
     outputs = ["backtest_results_v9.csv","backtest_scores_v9.csv","overall_summary_v9.csv","league_summary_v9.csv","season_summary_v9.csv","confidence_summary_v9.csv","score_summary_v9.csv","mom_summary_v9.csv","model_comparison_v9.csv","data_coverage_v9.csv","feature_importance_v9.csv","backtest_results_v12.csv","overall_summary_v12.csv"]
