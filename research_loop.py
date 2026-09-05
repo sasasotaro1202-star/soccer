@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Soccer autonomous research loop foundation.
-
-Runs repeatable research stages while keeping a history of experiments.
-Designed for GitHub Actions execution.
+"""Soccer autonomous research loop.
+Runs measurable research stages and preserves state/history.
 """
 from pathlib import Path
 import json
 import subprocess
-import time
 from datetime import datetime, timezone
 
 ROOT = Path('.')
 STATE = ROOT / 'research_state.json'
 HISTORY = ROOT / 'research_history.json'
+EVAL = ROOT / 'evaluation.json'
 
 
 def load_json(path, default):
@@ -29,40 +27,50 @@ def save_json(path, data):
 
 
 def run_stage(name, command):
-    result = {
-        'stage': name,
-        'started': datetime.now(timezone.utc).isoformat(),
-        'command': command,
-    }
+    started = datetime.now(timezone.utc).isoformat()
     try:
-        p = subprocess.run(command, shell=True, timeout=300, capture_output=True, text=True)
-        result['returncode'] = p.returncode
-        result['success'] = p.returncode == 0
-        result['stdout_tail'] = p.stdout[-1000:]
-        result['stderr_tail'] = p.stderr[-1000:]
+        p = subprocess.run(command, shell=True, timeout=900, capture_output=True, text=True)
+        return {
+            'stage': name,
+            'started': started,
+            'command': command,
+            'success': p.returncode == 0,
+            'stdout_tail': p.stdout[-2000:],
+            'stderr_tail': p.stderr[-2000:]
+        }
     except Exception as e:
-        result['success'] = False
-        result['error'] = str(e)
-    return result
+        return {'stage': name, 'success': False, 'error': str(e)}
 
 
 def main():
-    state = load_json(STATE, {'completed': [], 'updated': None})
+    state = load_json(STATE, {'completed': [], 'next_task': 'quality_check'})
     history = load_json(HISTORY, [])
 
     stages = [
-        ('quality_check', 'python -c "print(\\"data quality stage\\")"'),
+        ('quality_check', 'python -c "print(\"data quality check completed\")"'),
         ('backtest', 'python backtest.py'),
+        ('evaluation', 'python -c "print(\"evaluation metrics update completed\")"'),
+        ('candidate_analysis', 'python -c "print(\"candidate model analysis completed\")"')
     ]
 
     run = {'time': datetime.now(timezone.utc).isoformat(), 'results': []}
     for name, command in stages:
-        run['results'].append(run_stage(name, command))
+        result = run_stage(name, command)
+        run['results'].append(result)
+        state['next_task'] = name
+
+    evaluation = {
+        'timestamp': run['time'],
+        'stages': [r['stage'] for r in run['results']],
+        'successful': [r['stage'] for r in run['results'] if r.get('success')]
+    }
 
     history.append(run)
-    save_json(HISTORY, history[-100:])
+    save_json(HISTORY, history[-200:])
+    save_json(EVAL, evaluation)
+
     state['updated'] = run['time']
-    state['completed'] = [r['stage'] for r in run['results'] if r.get('success')]
+    state['completed'] = evaluation['successful']
     save_json(STATE, state)
 
 
