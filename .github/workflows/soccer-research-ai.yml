@@ -22,9 +22,11 @@ jobs:
   research:
     name: V12 autonomous evaluation and research
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 60
     env:
       MAX_RUNTIME_SECONDS: '3300'
+      CANDIDATE_RETRAIN_EVERY: '100'
+      CANDIDATE_MIN_TRAIN: '260'
       PYTHONUNBUFFERED: '1'
     steps:
       - name: Checkout
@@ -42,18 +44,32 @@ jobs:
 
       - name: Preflight
         run: |
-          python -m py_compile v12_auto_research.py engine/*.py
+          python -m py_compile v12_auto_research.py v12_runner.py engine/*.py
 
       - name: Run V12 autonomous research
         run: python v12_auto_research.py
+
+      - name: Validate research outputs
+        run: |
+          test -s evaluation.json
+          test -s failure_analysis.json
+          test -s candidate_models.json
+          test -s candidate_evaluations.json
+          python - <<'PY'
+          import json
+          p=json.load(open('candidate_evaluations.json',encoding='utf-8'))
+          assert p.get('leak_policy') == 'prior_rows_only'
+          assert isinstance(p.get('candidates'),list)
+          print('candidate OOS gate: PASS')
+          PY
 
       - name: Save research state
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add research_state.json research_history.json evaluation.json failure_analysis.json candidate_models.json model_comparison_v12.json model_registry.json || true
-          git commit -m 'Update soccer V12 autonomous research state' || true
-          git push || true
+          git add research_state.json research_history.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
+          git diff --cached --quiet || git commit -m 'Update soccer V12 autonomous research state'
+          git push
 
       - name: Upload research artifacts
         uses: actions/upload-artifact@v4
@@ -62,11 +78,12 @@ jobs:
           path: |
             evaluation.json
             failure_analysis.json
+            condition_analysis_v12.json
             candidate_models.json
             candidate_evaluations.json
             model_comparison_v12.json
             model_registry.json
             research_state.json
             research_history.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
