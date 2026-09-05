@@ -44,10 +44,14 @@ with tempfile.TemporaryDirectory() as td:
         {"A": 1500}, 123, {"E0": 2010}
     )
     ck = b.load_state()
-    assert ck and ck["version"] == 9
+    assert ck and ck["version"] == 12
     assert ck["cursor"] == 123
     assert len(ck["histories"]["E0"]) == b.MAX_TRAIN
     assert b.CHECKPOINT.stat().st_size < 5_000_000
     b.CHECKPOINT = old
 
-print("V9 SMOKE TEST: PASS")
+print("V12 SMOKE TEST: PASS")
+
+# Canonical team matching must be exact after normalization (no unsafe substring matches).
+assert b.same_team("Manchester United", "Manchester United FC")
+assert not b.same_team("United", "Manchester United")
