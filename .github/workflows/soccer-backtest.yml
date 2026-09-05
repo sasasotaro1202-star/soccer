@@ -1,4 +1,4 @@
-name: Soccer Backtest V9 - Strong Auto Resume
+name: Soccer Backtest V12 - Strong Auto Resume
 
 on:
   workflow_dispatch:
@@ -6,11 +6,11 @@ on:
     - cron: "*/30 * * * *"
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 concurrency:
-  group: soccer-backtest-v9-auto
+  group: soccer-backtest-v12-auto
   cancel-in-progress: false
 
 jobs:
@@ -23,11 +23,31 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Materialize V12 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v12_payload/part*.b64 | tr -d '\n' | base64 -d | gzip -d > /tmp/backtest_v12.py
+          echo "9bfb0dfc45115a98043d36d1864ad0606e486ce3f7da6e1cf966fa299c492c1e  /tmp/backtest_v12.py" | sha256sum -c -
+          mv /tmp/backtest_v12.py backtest.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backtest.py
+          git rm -f v12_payload/part01.b64 v12_payload/part02.b64 v12_payload/part03.b64 v12_payload/part04.b64
+          git commit -m "Promote soccer backtest source to V12"
+          git push origin HEAD:main
+
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
+
+      - name: Cache data
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: soccer-backtest-data-v12-${{ runner.os }}-${{ hashFiles('backtest.py', 'requirements.txt') }}
 
       - name: Install dependencies
         run: |
@@ -39,20 +59,7 @@ jobs:
           python -m py_compile backtest.py
           python tests/smoke_test.py
 
-      - name: Restore latest V9 automatic state
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" \
-            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
-          if [ -n "${ARTIFACT_ID}" ]; then
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state-v9.zip
-            unzip -o /tmp/state-v9.zip -d .
-          fi
-
-      - name: Run / resume V9 chronological backtest
+      - name: Run V12 chronological backtest
         env:
           MAX_RUNTIME_SECONDS: "1620"
           ENABLE_SOFASCORE: "1"
@@ -63,16 +70,15 @@ jobs:
           FRIENDLY_MAX_PAGES: "250"
         run: python backtest.py
 
-      - name: Save V9 automatic state artifact
+      - name: Save V12 automatic state artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: soccer-backtest-state-v9
+          name: soccer-backtest-state-v12
           path: |
-            backtest_checkpoint_v9.pkl.gz
-            BACKTEST_COMPLETE_V9
-            cache/
-            *_v9.csv
+            backtest_checkpoint_v12.pkl.gz
+            BACKTEST_COMPLETE_V12
+            *_v12.csv
           if-no-files-found: ignore
           retention-days: 90
           compression-level: 6
@@ -83,6 +89,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if [ -f BACKTEST_COMPLETE_V9 ]; then
+          if [ -f BACKTEST_COMPLETE_V12 ]; then
             gh workflow disable "${{ github.workflow }}" --repo "${{ github.repository }}" || true
           fi
