@@ -11,6 +11,16 @@ on:
       - 'BACKTEST_COMPLETE_V9'
       - 'BACKTEST_COMPLETE_V12'
       - 'cache/**'
+      - 'research_state.json'
+      - 'research_history.json'
+      - 'evaluation.json'
+      - 'failure_analysis.json'
+      - 'condition_analysis_v12.json'
+      - 'candidate_models.json'
+      - 'candidate_evaluations.json'
+      - 'model_comparison_v12.json'
+      - 'model_registry.json'
+      - 'self_heal/**'
   schedule:
     - cron: '17,47 * * * *'
 
@@ -25,8 +35,6 @@ concurrency:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    # Deliberately capped at one hour. The chronological engine checkpoints
-    # and the self-heal workflow retries/resumes until true completion.
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -52,7 +60,7 @@ jobs:
           import re
           p=Path('backtest.py'); s=p.read_text(encoding='utf-8')
           anchor='''    aliases={\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
-          replacement='''    aliases={\n        # English aliases used by Football-Data / SofaScore / OpenFootball.\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united","manchester united fc":"manchester united",\n        "man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers","leicester":"leicester city","leeds":"leeds united",\n        "brighton":"brighton hove albion","sheffield utd":"sheffield united","norwich":"norwich city","qpr":"queens park rangers",\n        "west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
+          replacement='''    aliases={\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united","manchester united fc":"manchester united",\n        "man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers","leicester":"leicester city","leeds":"leeds united",\n        "brighton":"brighton hove albion","sheffield utd":"sheffield united","norwich":"norwich city","qpr":"queens park rangers",\n        "west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
           if anchor not in s: raise SystemExit('[PATCH] team_key alias anchor not found')
           s=s.replace(anchor,replacement,1)
           old='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return ka==kb or ka in kb or kb in ka\n'''
@@ -61,7 +69,8 @@ jobs:
           elif 'def same_team(a,b):' in s and 'ka in kb' in s: s=re.sub(r'def same_team\\(a,b\\):\\n(?:    .*\\n){2}',new,s,count=1)
           else: raise SystemExit('[PATCH] same_team implementation not found')
           p.write_text(s,encoding='utf-8')
-          r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8'); marker='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
+          r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8')
+          marker='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
           if marker not in rs: rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+marker, 1)
           if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] V12 prior-row safeguard marker missing')
           r.write_text(rs,encoding='utf-8')
