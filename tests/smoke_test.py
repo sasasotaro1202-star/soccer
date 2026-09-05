@@ -13,7 +13,6 @@ b.START = time.time()
 b.make_feature_names()
 assert len(b.FEATURE_NAMES) == 136, len(b.FEATURE_NAMES)
 
-# Model probability and sample-weight smoke test.
 rng = np.random.default_rng(7)
 X = rng.normal(size=(180, len(b.FEATURE_NAMES)))
 y = np.array([i % 3 for i in range(180)])
@@ -26,17 +25,16 @@ for name, model in b.build_models().items():
     assert np.all(p >= 0.0) and np.all(p <= 1.0)
     assert np.allclose(p.sum(axis=1), 1.0, atol=1e-8)
 
-# Expanding-window validation must never place validation before training.
 folds = b._chronological_folds(500, min_train=140, n_folds=3)
 assert folds == [(320, 380), (380, 440), (440, 500)]
 assert all(folds[i][1] <= folds[i + 1][0] for i in range(len(folds) - 1))
 
-# Canonical team matching must be exact after normalization; unsafe substring
-# matching is explicitly forbidden.
+# Team matching must be conservative: aliases are explicit, never substring-based.
 assert b.same_team("Manchester United", "Manchester United FC")
+assert b.same_team("Man United", "Manchester United")
 assert not b.same_team("United", "Manchester United")
+assert not b.same_team("City", "Manchester City")
 
-# Checkpoint round-trip and history-size control.
 with tempfile.TemporaryDirectory() as td:
     old = b.CHECKPOINT
     b.CHECKPOINT = Path(td) / "ck.pkl.gz"
