@@ -61,18 +61,22 @@ jobs:
           python tests/smoke_test.py
           python soccer_audit.py
 
-      - name: Restore latest resumable V9 engine state
+      - name: Restore latest resumable V12/V9 engine state
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" \
+          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v12&per_page=100" \
             --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
+          if [ -z "${ARTIFACT_ID}" ]; then
+            ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
+          fi
           if [ -n "${ARTIFACT_ID}" ]; then
             echo "[STATE] restoring artifact ${ARTIFACT_ID}"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state-v9.zip
-            unzip -o /tmp/state-v9.zip -d .
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state.zip
+            unzip -o /tmp/state.zip -d .
           else
             echo '[STATE] no resumable artifact; starting from repository state'
           fi
@@ -97,7 +101,7 @@ jobs:
           set -euo pipefail
           python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
           python soccer_audit.py
-          test -s backtest_results_v12.csv || test ! -f BACKTEST_COMPLETE_V9
+          if [ -f BACKTEST_COMPLETE_V9 ]; then test -s backtest_results_v12.csv; fi
 
       - name: Validate V12 outputs
         if: always()
