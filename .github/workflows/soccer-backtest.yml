@@ -12,7 +12,7 @@ on:
       - 'BACKTEST_COMPLETE_V12'
       - 'cache/**'
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '17,47 * * * *'
 
 permissions:
   contents: write
@@ -25,10 +25,9 @@ concurrency:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    # The chronological V9 engine needs materially more than 30 minutes
-    # for the full historical universe. Checkpoint/resume remains enabled,
-    # but a single manual Action should normally be sufficient to finish.
-    timeout-minutes: 210
+    # Deliberately capped at one hour. The chronological engine checkpoints
+    # and the self-heal workflow retries/resumes until true completion.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -51,33 +50,20 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-
-          p=Path('backtest.py')
-          s=p.read_text(encoding='utf-8')
-
+          p=Path('backtest.py'); s=p.read_text(encoding='utf-8')
           anchor='''    aliases={\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
-          replacement='''    aliases={\n        # English aliases used by Football-Data / SofaScore / OpenFootball.\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united",\n        "manchester united fc":"manchester united","man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers",\n        "leicester":"leicester city","leeds":"leeds united","brighton":"brighton hove albion","sheffield utd":"sheffield united",\n        "norwich":"norwich city","qpr":"queens park rangers","west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
-          if anchor not in s:
-              raise SystemExit('[PATCH] team_key alias anchor not found')
+          replacement='''    aliases={\n        # English aliases used by Football-Data / SofaScore / OpenFootball.\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united","manchester united fc":"manchester united",\n        "man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers","leicester":"leicester city","leeds":"leeds united",\n        "brighton":"brighton hove albion","sheffield utd":"sheffield united","norwich":"norwich city","qpr":"queens park rangers",\n        "west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
+          if anchor not in s: raise SystemExit('[PATCH] team_key alias anchor not found')
           s=s.replace(anchor,replacement,1)
-
           old='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return ka==kb or ka in kb or kb in ka\n'''
-          new='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    # Explicit canonical aliases only; never use substring matching.\n    return bool(ka) and bool(kb) and ka == kb\n'''
-          if old in s:
-              s=s.replace(old,new,1)
-          elif 'def same_team(a,b):' in s and 'ka in kb' in s:
-              s=re.sub(r'def same_team\\(a,b\\):\\n(?:    .*\\n){2}',new,s,count=1)
-          else:
-              raise SystemExit('[PATCH] same_team implementation not found')
+          new='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return bool(ka) and bool(kb) and ka == kb\n'''
+          if old in s: s=s.replace(old,new,1)
+          elif 'def same_team(a,b):' in s and 'ka in kb' in s: s=re.sub(r'def same_team\\(a,b\\):\\n(?:    .*\\n){2}',new,s,count=1)
+          else: raise SystemExit('[PATCH] same_team implementation not found')
           p.write_text(s,encoding='utf-8')
-
-          r=Path('v12_runner.py')
-          rs=r.read_text(encoding='utf-8')
-          marker='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
-          if marker not in rs:
-              rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+marker, 1)
-          if 'prior rows only' not in rs.lower():
-              raise SystemExit('[PATCH] V12 prior-row safeguard marker could not be installed')
+          r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8'); marker='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
+          if marker not in rs: rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+marker, 1)
+          if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] V12 prior-row safeguard marker missing')
           r.write_text(rs,encoding='utf-8')
           print('[PATCH] production hardening applied')
           PY
@@ -98,9 +84,7 @@ jobs:
           if [ -n "${ARTIFACT_ID}" ]; then gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state.zip; unzip -o /tmp/state.zip -d .; else echo '[STATE] no artifact'; fi
       - name: Run V12 / resume chronological engine
         env:
-          # Sized for the observed full-run rate (~33.7k historical matches).
-          # Checkpoint/resume remains a second-line recovery mechanism.
-          MAX_RUNTIME_SECONDS: '11700'
+          MAX_RUNTIME_SECONDS: '3300'
           ENABLE_SOFASCORE: '1'
           SOFASCORE_DETAILS: '0'
           ENABLE_UNDERSTAT: '1'
@@ -133,7 +117,7 @@ jobs:
           if miss: raise SystemExit(f'V12 columns missing: {miss}')
           probs=d[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
           if not np.all(np.isfinite(probs)) or not np.allclose(probs.sum(axis=1),1.0,atol=1e-6): raise SystemExit('invalid V12 probabilities')
-          if len(d) < 100: raise SystemExit(f'V12 output suspiciously small: {len(d)} rows')
+          if len(d)<100: raise SystemExit(f'V12 output suspiciously small: {len(d)} rows')
           print(f'[V12] output validation PASS rows={len(d)}')
           PY
       - name: Upload V12 resumable state and results
