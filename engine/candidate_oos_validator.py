@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Real leak-safe walk-forward candidate training and OOS validation.
-
-Each candidate predicts a row using only strictly earlier rows. The current
-Actual is appended to training history only after that row has been scored.
-Candidate parameters materially change the model, feature set, or calibration.
-"""
+"""Real leak-safe walk-forward candidate training and OOS validation."""
 from __future__ import annotations
 import hashlib,json,math,os,time
 from pathlib import Path
@@ -14,7 +9,6 @@ from sklearn.linear_model import SGDClassifier
 
 V9=Path('backtest_results_v9.csv'); V12=Path('backtest_results_v12.csv'); CAND=Path('candidate_models.json'); OUT=Path('candidate_evaluations.json')
 EPS=1e-7; MIN_TRAIN=int(os.environ.get('CANDIDATE_MIN_TRAIN','260')); RETRAIN_EVERY=int(os.environ.get('CANDIDATE_RETRAIN_EVERY','150')); MAX_ROWS=int(os.environ.get('CANDIDATE_MAX_ROWS','0')); BUDGET=float(os.environ.get('MAX_RUNTIME_SECONDS','3300'))
-CLASSES=np.array([0,1,2])
 
 def idx(v):
     if isinstance(v,str):
@@ -26,33 +20,29 @@ def idx(v):
 def clean(p):
     p=np.nan_to_num(np.asarray(p,float),nan=1/3,posinf=1/3,neginf=1/3); p=np.clip(p,EPS,1.0); s=p.sum(); return p/s if s>0 else np.ones(3)/3
 
-def _hash(s):
-    return (int(hashlib.md5(str(s).encode()).hexdigest()[:8],16)%1000000)/1000000.0
+def _hash(s): return (int(hashlib.md5(str(s).encode()).hexdigest()[:8],16)%1000000)/1000000.0
+
+def probs(df,prefix):
+    return np.column_stack([pd.to_numeric(df[f'{prefix}Home'],errors='coerce').fillna(1/3),pd.to_numeric(df[f'{prefix}Draw'],errors='coerce').fillna(1/3),pd.to_numeric(df[f'{prefix}Away'],errors='coerce').fillna(1/3)])
 
 def feature_frame(df,kind):
-    def arr(prefix): return np.column_stack([pd.to_numeric(df[f'{prefix}Home'],errors='coerce').fillna(1/3),pd.to_numeric(df[f'{prefix}Draw'],errors='coerce').fillna(1/3),pd.to_numeric(df[f'{prefix}Away'],errors='coerce').fillna(1/3)])
-    base=arr('') if all(f'{x}' in df.columns for x in ('HomeProb','DrawProb','AwayProb')) else None
-    market=np.column_stack([df['MarketHome'],df['MarketDraw'],df['MarketAway']]).astype(float)
-    ml=np.column_stack([df['MLHome'],df['MLDraw'],df['MLAway']]).astype(float)
-    poi=np.column_stack([df['PoissonHome'],df['PoissonDraw'],df['PoissonAway']]).astype(float)
-    X=[base,market,ml,poi]
-    X.extend([base-market,base-ml,base-poi])
-    X.append(np.column_stack([base.max(1),np.abs(base[:,0]-base[:,2]),base[:,1]]))
+    base=probs(df,'HomeProb'); market=probs(df,'Market'); ml=probs(df,'ML'); poi=probs(df,'Poisson')
+    if kind=='market_gap': blocks=[base,market,base-market,base-ml,base-poi]
+    else: blocks=[base,market,ml,poi,base-market,base-ml,base-poi,np.column_stack([base.max(1),np.abs(base[:,0]-base[:,2]),base[:,1]])]
     if kind in ('context','draw_specialist'):
         league=np.array([_hash(x) for x in df.get('League','__UNKNOWN__')])[:,None]
         month=np.zeros((len(df),2))
         if 'Date' in df:
             d=pd.to_datetime(df['Date'],errors='coerce',dayfirst=True); m=d.dt.month.fillna(0).to_numpy(float); month[:,0]=np.sin(2*np.pi*m/12); month[:,1]=np.cos(2*np.pi*m/12)
-        X.extend([league,month])
-    if kind=='market_gap': X=[base,market,base-market,base-ml,base-poi]
-    return np.nan_to_num(np.column_stack(X),nan=1/3,posinf=1/3,neginf=1/3)
+        blocks.extend([league,month])
+    return np.nan_to_num(np.column_stack(blocks),nan=1/3,posinf=1/3,neginf=1/3)
 
 def metrics(P,y):
-    P=np.asarray(P); y=np.asarray(y,int); acc=float(np.mean(P.argmax(1)==y)); ll=float(np.mean(-np.log(np.clip(P[np.arange(len(y)),y],EPS,1.0))); br=float(np.mean(np.sum((P-np.eye(3)[y])**2,axis=1))); return acc,ll,br
+    P=np.asarray(P); y=np.asarray(y,int); acc=float(np.mean(P.argmax(1)==y)); ll=float(np.mean(-np.log(np.clip(P[np.arange(len(y)),y],EPS,1.0)))); br=float(np.mean(np.sum((P-np.eye(3)[y])**2,axis=1))); return acc,ll,br
 
 def run_candidate(cid,kind,params,df,baseline,deadline):
-    X=feature_frame(df,kind); y=np.array([idx(v) for v in df['Actual']],dtype=int); n=len(df); pred=np.zeros((n,3)); last=None; trained=0; start=time.monotonic(); alpha=float(params.get('alpha',0.0005)); class_weight=None
-    if kind=='draw_specialist': class_weight={0:1.0,1:float(params.get('draw_weight',1.15)),2:1.0}
+    X=feature_frame(df,kind); y=np.array([idx(v) for v in df['Actual']],dtype=int); n=len(df); pred=np.zeros((n,3)); last=None; trained=0; alpha=float(params.get('alpha',0.0005))
+    class_weight={0:1.0,1:float(params.get('draw_weight',1.15)),2:1.0} if kind=='draw_specialist' else None
     for i in range(n):
         if time.monotonic()>deadline: return {'id':cid,'kind':kind,'params':params,'status':'timeout'}
         if i<MIN_TRAIN:
@@ -79,12 +69,10 @@ def main():
     if miss: raise SystemExit(f'missing candidate features: {miss}')
     baseline=v12[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
     if MAX_ROWS>0: df=df.iloc[:MAX_ROWS].copy(); baseline=baseline[:MAX_ROWS]
-    candidates=json.loads(CAND.read_text(encoding='utf-8')).get('candidates',[])
-    deadline=time.monotonic()+BUDGET*0.90; results=[]
+    candidates=json.loads(CAND.read_text(encoding='utf-8')).get('candidates',[]); deadline=time.monotonic()+BUDGET*0.90; results=[]
     for c in candidates[:6]:
         r=run_candidate(c['id'],c.get('kind','stacking'),c.get('params',{}),df,baseline,deadline); results.append(r)
         if r.get('status')=='timeout': break
-    OUT.write_text(json.dumps({'version':'V12-candidate-oos-v2','leak_policy':'prior_rows_only','min_train':MIN_TRAIN,'retrain_every':RETRAIN_EVERY,'candidates':results},ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps(json.loads(OUT.read_text(encoding='utf-8')),ensure_ascii=False))
+    OUT.write_text(json.dumps({'version':'V12-candidate-oos-v2','leak_policy':'prior_rows_only','min_train':MIN_TRAIN,'retrain_every':RETRAIN_EVERY,'candidates':results},ensure_ascii=False,indent=2),encoding='utf-8'); print(OUT.read_text(encoding='utf-8'))
 
 if __name__=='__main__': main()
