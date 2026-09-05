@@ -1,0 +1,47 @@
+name: Soccer Integrity Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backtest.py'
+      - 'tests/**'
+      - 'soccer_audit.py'
+      - '.github/workflows/soccer-backtest.yml'
+      - '.github/workflows/soccer-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile and smoke test
+        run: |
+          set -euo pipefail
+          python -m py_compile backtest.py tests/smoke_test.py soccer_audit.py
+          python tests/smoke_test.py
+
+      - name: Integrity and leakage audit
+        run: |
+          set -euo pipefail
+          python soccer_audit.py

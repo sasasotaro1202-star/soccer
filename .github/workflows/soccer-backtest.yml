@@ -1,22 +1,38 @@
-name: Soccer Backtest V9 - Strong Auto Resume
+name: Soccer Backtest V9 - Hardened Continuous
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'backtest_results_v9.csv'
+      - 'backtest_scores_v9.csv'
+      - 'overall_summary_v9.csv'
+      - 'league_summary_v9.csv'
+      - 'season_summary_v9.csv'
+      - 'confidence_summary_v9.csv'
+      - 'score_summary_v9.csv'
+      - 'mom_summary_v9.csv'
+      - 'model_comparison_v9.csv'
+      - 'data_coverage_v9.csv'
+      - 'feature_importance_v9.csv'
+      - 'backtest_checkpoint_v9.pkl.gz'
+      - 'BACKTEST_COMPLETE_V9'
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: '*/30 * * * *'
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 concurrency:
-  group: soccer-backtest-v9-auto
+  group: soccer-backtest-v9-hardened
   cancel-in-progress: false
 
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 29
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -26,20 +42,24 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: '3.11'
           cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      - name: Preflight tests
+      - name: Preflight syntax and model smoke tests
         run: |
-          python -m py_compile backtest.py
+          set -euo pipefail
+          python -m py_compile backtest.py tests/smoke_test.py soccer_audit.py
           python tests/smoke_test.py
+          python soccer_audit.py
 
-      - name: Restore latest V9 automatic state
+      - name: Restore latest resumable V9 state
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -48,22 +68,64 @@ jobs:
           ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" \
             --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
           if [ -n "${ARTIFACT_ID}" ]; then
+            echo "[STATE] restoring artifact ${ARTIFACT_ID}"
             gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state-v9.zip
             unzip -o /tmp/state-v9.zip -d .
+          else
+            echo '[STATE] no resumable artifact; starting from repository state'
           fi
 
-      - name: Run / resume V9 chronological backtest
+      - name: Run / resume chronological backtest
         env:
-          MAX_RUNTIME_SECONDS: "1620"
-          ENABLE_SOFASCORE: "1"
-          SOFASCORE_DETAILS: "0"
-          ENABLE_UNDERSTAT: "1"
-          INCLUDE_CLUB_FRIENDLIES: "1"
-          FRIENDLY_MIN_YEAR: "2010"
-          FRIENDLY_MAX_PAGES: "250"
-        run: python backtest.py
+          MAX_RUNTIME_SECONDS: '1620'
+          ENABLE_SOFASCORE: '1'
+          SOFASCORE_DETAILS: '0'
+          ENABLE_UNDERSTAT: '1'
+          INCLUDE_CLUB_FRIENDLIES: '1'
+          FRIENDLY_MIN_YEAR: '2010'
+          FRIENDLY_MAX_PAGES: '250'
+          PYTHONUNBUFFERED: '1'
+        run: |
+          set -euo pipefail
+          python backtest.py
 
-      - name: Save V9 automatic state artifact
+      - name: Post-run integrity and leakage audit
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m py_compile backtest.py tests/smoke_test.py soccer_audit.py
+          python soccer_audit.py
+
+      - name: Validate generated files
+        if: always()
+        run: |
+          set +e
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          files = [
+              'backtest_results_v9.csv', 'backtest_scores_v9.csv',
+              'overall_summary_v9.csv', 'league_summary_v9.csv',
+              'season_summary_v9.csv', 'confidence_summary_v9.csv',
+              'score_summary_v9.csv', 'mom_summary_v9.csv',
+              'model_comparison_v9.csv', 'data_coverage_v9.csv',
+              'feature_importance_v9.csv',
+          ]
+          for name in files:
+              p = Path(name)
+              if not p.exists():
+                  print(f'[FILE] MISSING {name}')
+                  continue
+              try:
+                  d = pd.read_csv(p, low_memory=False)
+                  print(f'[FILE] {name} rows={len(d)} bytes={p.stat().st_size}')
+              except Exception as e:
+                  print(f'[FILE] {name} read_error={e}')
+          PY
+          echo '=== repository outputs ==='
+          find . -maxdepth 1 -type f \( -name '*_v9.csv' -o -name 'BACKTEST_COMPLETE_V9' -o -name 'backtest_checkpoint_v9.pkl.gz' \) -printf '%p %s bytes\n' 2>/dev/null | sort
+
+      - name: Upload resumable state
         if: always()
         uses: actions/upload-artifact@v6
         with:
@@ -77,12 +139,40 @@ jobs:
           retention-days: 90
           compression-level: 6
 
-      - name: Disable schedule after full completion
+      - name: Persist state and results to main
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            backtest_checkpoint_v9.pkl.gz \
+            BACKTEST_COMPLETE_V9 \
+            backtest_results_v9.csv \
+            backtest_scores_v9.csv \
+            overall_summary_v9.csv \
+            league_summary_v9.csv \
+            season_summary_v9.csv \
+            confidence_summary_v9.csv \
+            score_summary_v9.csv \
+            mom_summary_v9.csv \
+            model_comparison_v9.csv \
+            data_coverage_v9.csv \
+            feature_importance_v9.csv 2>/dev/null
+          if git diff --cached --quiet; then
+            echo '[COMMIT] no generated changes.'
+          else
+            git commit -m 'Persist soccer backtest state and results'
+            git push origin HEAD:main
+          fi
+
+      - name: Disable schedule after verified completion
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           if [ -f BACKTEST_COMPLETE_V9 ]; then
-            gh workflow disable "${{ github.workflow }}" --repo "${{ github.repository }}" || true
+            gh workflow disable '${{ github.workflow }}' --repo '${{ github.repository }}' || true
           fi
