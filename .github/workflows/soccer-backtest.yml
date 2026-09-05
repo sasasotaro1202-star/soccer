@@ -42,17 +42,34 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-      - name: Apply canonical team-matching hardening
+      - name: Apply production hardening patches
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          p=Path('backtest.py'); s=p.read_text(encoding='utf-8')
-          old='    return ka==kb or ka in kb or kb in ka\n'
-          new='    # Conservative equality only; substring aliases can corrupt team state.\n    return bool(ka) and ka == kb\n'
-          if old not in s: raise SystemExit('[PATCH] unsafe same_team implementation not found')
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
-          print('[PATCH] conservative same_team canonicalization applied')
+          import re
+
+          p=Path('backtest.py')
+          s=p.read_text(encoding='utf-8')
+          old='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return ka==kb or ka in kb or kb in ka\n'''
+          new='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    # Explicit canonical aliases only; never use substring matching.\n    return bool(ka) and bool(kb) and ka == kb\n'''
+          if old in s:
+              s=s.replace(old,new,1)
+          elif 'def same_team(a,b):' in s and 'ka in kb' in s:
+              s=re.sub(r'def same_team\(a,b\):\n(?:    .*\n){2}', new, s, count=1)
+          else:
+              raise SystemExit('[PATCH] same_team implementation not found')
+          p.write_text(s,encoding='utf-8')
+
+          r=Path('v12_runner.py')
+          rs=r.read_text(encoding='utf-8')
+          marker='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
+          if marker not in rs:
+              rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+marker, 1)
+          if 'prior rows only' not in rs.lower():
+              raise SystemExit('[PATCH] V12 prior-row safeguard marker could not be installed')
+          r.write_text(rs,encoding='utf-8')
+          print('[PATCH] production hardening applied: explicit team aliases + prior-row V12 marker')
           PY
       - name: V12 preflight and integrity gate
         run: |
@@ -104,6 +121,7 @@ jobs:
           if miss: raise SystemExit(f'V12 columns missing: {miss}')
           probs=d[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
           if not np.all(np.isfinite(probs)) or not np.allclose(probs.sum(axis=1),1.0,atol=1e-6): raise SystemExit('invalid V12 probabilities')
+          if len(d) < 100: raise SystemExit(f'V12 output suspiciously small: {len(d)} rows')
           print(f'[V12] output validation PASS rows={len(d)}')
           PY
       - name: Upload V12 resumable state and results
@@ -113,6 +131,7 @@ jobs:
           name: soccer-backtest-state-v12
           path: |
             backtest.py
+            v12_runner.py
             backtest_checkpoint_v9.pkl.gz
             BACKTEST_COMPLETE_V9
             BACKTEST_COMPLETE_V12
@@ -129,7 +148,7 @@ jobs:
           set +e
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backtest.py backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12 '*_v9.csv' '*_v12.csv' cache/ 2>/dev/null
+          git add backtest.py v12_runner.py backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12 '*_v9.csv' '*_v12.csv' cache/ 2>/dev/null
           if git diff --cached --quiet; then echo '[COMMIT] no generated changes.'; else git commit -m 'Persist soccer V12 backtest state and results'; git push origin HEAD:main; fi
       - name: Disable schedule after verified V12 completion
         if: always()
