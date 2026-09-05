@@ -1,4 +1,4 @@
-name: Soccer Backtest V9 - Hardened Continuous
+name: Soccer Backtest V12 - Hardened Production
 
 on:
   workflow_dispatch:
@@ -16,6 +16,8 @@ on:
       - 'model_comparison_v9.csv'
       - 'data_coverage_v9.csv'
       - 'feature_importance_v9.csv'
+      - 'backtest_results_v12.csv'
+      - 'overall_summary_v12.csv'
       - 'backtest_checkpoint_v9.pkl.gz'
       - 'BACKTEST_COMPLETE_V9'
   schedule:
@@ -26,7 +28,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: soccer-backtest-v9-hardened
+  group: soccer-backtest-v12-production
   cancel-in-progress: false
 
 jobs:
@@ -52,14 +54,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Preflight syntax and model smoke tests
+      - name: V12 preflight and integrity gate
         run: |
           set -euo pipefail
-          python -m py_compile backtest.py tests/smoke_test.py soccer_audit.py
+          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
           python tests/smoke_test.py
           python soccer_audit.py
 
-      - name: Restore latest resumable V9 state
+      - name: Restore latest resumable V9 engine state
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -75,7 +77,7 @@ jobs:
             echo '[STATE] no resumable artifact; starting from repository state'
           fi
 
-      - name: Run / resume chronological backtest
+      - name: Run V12 / resume chronological engine
         env:
           MAX_RUNTIME_SECONDS: '1620'
           ENABLE_SOFASCORE: '1'
@@ -87,16 +89,17 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: |
           set -euo pipefail
-          python backtest.py
+          python v12_runner.py
 
-      - name: Post-run integrity and leakage audit
+      - name: V12 post-run audit
         if: always()
         run: |
           set -euo pipefail
-          python -m py_compile backtest.py tests/smoke_test.py soccer_audit.py
+          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
           python soccer_audit.py
+          test -s backtest_results_v12.csv || test ! -f BACKTEST_COMPLETE_V9
 
-      - name: Validate generated files
+      - name: Validate V12 outputs
         if: always()
         run: |
           set +e
@@ -104,12 +107,12 @@ jobs:
           from pathlib import Path
           import pandas as pd
           files = [
-              'backtest_results_v9.csv', 'backtest_scores_v9.csv',
-              'overall_summary_v9.csv', 'league_summary_v9.csv',
-              'season_summary_v9.csv', 'confidence_summary_v9.csv',
-              'score_summary_v9.csv', 'mom_summary_v9.csv',
-              'model_comparison_v9.csv', 'data_coverage_v9.csv',
-              'feature_importance_v9.csv',
+              'backtest_results_v12.csv', 'overall_summary_v12.csv',
+              'backtest_results_v9.csv', 'overall_summary_v9.csv',
+              'league_summary_v9.csv', 'season_summary_v9.csv',
+              'confidence_summary_v9.csv', 'score_summary_v9.csv',
+              'mom_summary_v9.csv', 'model_comparison_v9.csv',
+              'data_coverage_v9.csv', 'feature_importance_v9.csv',
           ]
           for name in files:
               p = Path(name)
@@ -120,26 +123,25 @@ jobs:
                   d = pd.read_csv(p, low_memory=False)
                   print(f'[FILE] {name} rows={len(d)} bytes={p.stat().st_size}')
               except Exception as e:
-                  print(f'[FILE] {name} read_error={e}')
+                  print(f'[FILE] READ_ERROR {name}: {e}')
           PY
-          echo '=== repository outputs ==='
-          find . -maxdepth 1 -type f \( -name '*_v9.csv' -o -name 'BACKTEST_COMPLETE_V9' -o -name 'backtest_checkpoint_v9.pkl.gz' \) -printf '%p %s bytes\n' 2>/dev/null | sort
 
-      - name: Upload resumable state
+      - name: Upload V12 resumable state and results
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: soccer-backtest-state-v9
+          name: soccer-backtest-state-v12
           path: |
             backtest_checkpoint_v9.pkl.gz
             BACKTEST_COMPLETE_V9
             cache/
             *_v9.csv
+            *_v12.csv
           if-no-files-found: ignore
           retention-days: 90
           compression-level: 6
 
-      - name: Persist state and results to main
+      - name: Persist V12 state and results to main
         if: always()
         shell: bash
         run: |
@@ -159,20 +161,22 @@ jobs:
             mom_summary_v9.csv \
             model_comparison_v9.csv \
             data_coverage_v9.csv \
-            feature_importance_v9.csv 2>/dev/null
+            feature_importance_v9.csv \
+            backtest_results_v12.csv \
+            overall_summary_v12.csv 2>/dev/null
           if git diff --cached --quiet; then
             echo '[COMMIT] no generated changes.'
           else
-            git commit -m 'Persist soccer backtest state and results'
+            git commit -m 'Persist soccer V12 backtest state and results'
             git push origin HEAD:main
           fi
 
-      - name: Disable schedule after verified completion
+      - name: Disable schedule after verified engine completion
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if [ -f BACKTEST_COMPLETE_V9 ]; then
+          if [ -f BACKTEST_COMPLETE_V9 ] && [ -s backtest_results_v12.csv ]; then
             gh workflow disable '${{ github.workflow }}' --repo '${{ github.repository }}' || true
           fi
