@@ -1,32 +1,25 @@
 #!/usr/bin/env python3
-"""Conservative model promotion gate for Soccer V12.
-
-A candidate is promotable only when an externally produced walk-forward/OOS
-result demonstrates improvement. No current outcome is used to choose its
-current prediction.
-"""
+"""Fail-closed promotion gate using real candidate OOS metrics."""
 from __future__ import annotations
 import json
 from pathlib import Path
 
-
-def compare(baseline, candidates, min_accuracy_delta=0.0, max_logloss_delta=0.0):
+def compare(candidates):
     rows=[]
-    bacc=baseline.get("accuracy"); bll=baseline.get("logloss")
     for c in candidates:
-        acc=c.get("accuracy"); ll=c.get("logloss")
-        valid=acc is not None and ll is not None and bacc is not None and bll is not None
-        improved=bool(valid and acc >= bacc+min_accuracy_delta and ll <= bll+max_logloss_delta and (acc>bacc or ll<bll))
-        rows.append({"id":c.get("id"),"accuracy":acc,"logloss":ll,"improved":improved,"adopt":improved,"reason":"OOS improvement" if improved else "No demonstrated OOS improvement"})
-    best=next((r for r in rows if r["adopt"]),None)
-    return {"version":"V12-model-compare-v1","baseline":baseline,"candidates":rows,"recommended":best["id"] if best else None,"fail_closed":True}
-
+        cand=c.get('candidate') or {}; base=c.get('baseline') or {}
+        acc,ll,br=cand.get('accuracy'),cand.get('logloss'),cand.get('brier')
+        bacc,bll,bbr=base.get('accuracy'),base.get('logloss'),base.get('brier')
+        valid=c.get('status')=='validated' and c.get('leak_policy','prior_rows_only')=='prior_rows_only' and None not in (acc,ll,br,bacc,bll,bbr)
+        # Require no degradation in any primary metric and a strict gain in at least one.
+        improved=bool(valid and acc>=bacc and ll<=bll and br<=bbr and (acc>bacc or ll<bll or br<bbr))
+        rows.append({'id':c.get('id'),'status':c.get('status'),'oos_rows':c.get('oos_rows'),'candidate':cand,'baseline':base,'improved':improved,'adopt':improved,'reason':'OOS improvement across primary metrics' if improved else 'No demonstrated OOS improvement','params':c.get('params',{})})
+    valid=[r for r in rows if r['adopt']]
+    best=min(valid,key=lambda r:(r['candidate']['logloss'],-r['candidate']['accuracy'],r['candidate']['brier'])) if valid else None
+    return {'version':'V12-model-compare-v2','candidates':rows,'recommended':best['id'] if best else None,'fail_closed':True,'policy':'accuracy_non_decreasing_logloss_non_increasing_brier_non_increasing'}
 
 def main():
-    baseline=json.loads(Path("evaluation.json").read_text(encoding="utf-8")) if Path("evaluation.json").exists() else {}
-    candidates=[]
-    p=Path("candidate_evaluations.json")
-    if p.exists(): candidates=json.loads(p.read_text(encoding="utf-8")).get("candidates",[])
-    out=compare(baseline,candidates); Path("model_comparison_v12.json").write_text(json.dumps(out,ensure_ascii=False,indent=2),encoding="utf-8"); print(json.dumps(out,ensure_ascii=False))
-
-if __name__=="__main__": main()
+    p=Path('candidate_evaluations.json')
+    data=json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}
+    out=compare(data.get('candidates',[])); Path('model_comparison_v12.json').write_text(json.dumps(out,ensure_ascii=False,indent=2),encoding='utf-8'); print(json.dumps(out,ensure_ascii=False))
+if __name__=='__main__': main()
