@@ -9,6 +9,9 @@ on:
     paths:
       - 'v12_auto_research.py'
       - 'engine/**'
+      - 'backtest_results_v12.csv'
+      - 'overall_summary_v12.csv'
+      - 'league_season_summary_v12.csv'
       - '.github/workflows/soccer-research-ai.yml'
 
 permissions:
@@ -25,17 +28,18 @@ jobs:
     timeout-minutes: 60
     env:
       MAX_RUNTIME_SECONDS: '3300'
-      CANDIDATE_RETRAIN_EVERY: '100'
+      CANDIDATE_RETRAIN_EVERY: '150'
       CANDIDATE_MIN_TRAIN: '260'
       PYTHONUNBUFFERED: '1'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          cache: pip
 
       - name: Install dependencies
         run: |
@@ -45,6 +49,12 @@ jobs:
       - name: Preflight
         run: |
           python -m py_compile v12_auto_research.py v12_runner.py engine/*.py
+          python - <<'PY'
+          import ast,glob
+          for p in ['v12_auto_research.py']+glob.glob('engine/*.py'):
+              ast.parse(open(p,encoding='utf-8').read(),filename=p)
+          print('research preflight: PASS')
+          PY
 
       - name: Run V12 autonomous research
         run: python v12_auto_research.py
@@ -53,14 +63,19 @@ jobs:
         run: |
           test -s evaluation.json
           test -s failure_analysis.json
+          test -s condition_analysis_v12.json
           test -s candidate_models.json
           test -s candidate_evaluations.json
+          test -s model_comparison_v12.json
+          test -s model_registry.json
           python - <<'PY'
           import json
           p=json.load(open('candidate_evaluations.json',encoding='utf-8'))
           assert p.get('leak_policy') == 'prior_rows_only'
-          assert isinstance(p.get('candidates'),list)
-          print('candidate OOS gate: PASS')
+          assert isinstance(p.get('candidates'),list) and p['candidates']
+          c=json.load(open('model_comparison_v12.json',encoding='utf-8'))
+          assert c.get('fail_closed') is True
+          print('candidate OOS + fail-closed promotion gate: PASS')
           PY
 
       - name: Save research state
@@ -72,7 +87,8 @@ jobs:
           git push
 
       - name: Upload research artifacts
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@v6
         with:
           name: soccer-v12-research-${{ github.run_id }}
           path: |
@@ -85,5 +101,5 @@ jobs:
             model_registry.json
             research_state.json
             research_history.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
