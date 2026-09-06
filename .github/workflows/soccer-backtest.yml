@@ -20,6 +20,7 @@ on:
       - 'candidate_evaluations.json'
       - 'model_comparison_v12.json'
       - 'model_registry.json'
+      - 'research_manifest.json'
       - 'self_heal/**'
   schedule:
     - cron: '17,47 * * * *'
@@ -38,11 +39,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
@@ -131,7 +132,7 @@ jobs:
           PY
       - name: Upload V12 resumable state and results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: soccer-backtest-state-v12
           path: |
@@ -155,9 +156,19 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backtest.py v12_runner.py backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12 '*_v9.csv' '*_v12.csv' cache/ 2>/dev/null
           if git diff --cached --quiet; then echo '[COMMIT] no generated changes.'; else git commit -m 'Persist soccer V12 backtest state and results'; git push origin HEAD:main; fi
-      - name: Disable schedule after verified V12 completion
-        if: always()
+      - name: Dispatch autonomous research after verified backtest
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          if [ -s BACKTEST_COMPLETE_V12 ] && [ -s backtest_results_v12.csv ]; then gh workflow disable '${{ github.workflow }}' --repo '${{ github.repository }}' || true; fi
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if gh workflow run soccer-research-ai.yml --repo "${GITHUB_REPOSITORY}"; then
+              echo "[CHAIN] autonomous research dispatched on attempt ${attempt}"
+              exit 0
+            fi
+            echo "[CHAIN] research dispatch attempt ${attempt} failed; retrying"
+            sleep $((attempt * 10))
+          done
+          exit 1
