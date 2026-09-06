@@ -10,7 +10,7 @@ permissions:
   contents: write
   actions: write
 concurrency:
-  group: soccer-backtest-v12-production-v7
+  group: soccer-backtest-v12-production-v8
   cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
@@ -64,9 +64,44 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v12&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
-          if [ -z "$id" ]; then id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty'); fi
-          if [ -n "$id" ]; then gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/$id/zip" > /tmp/state.zip; unzip -o /tmp/state.zip -d .; else echo '[STATE] no prior artifact'; fi
+          python - <<'PY'
+          import io, os, shutil, tempfile, zipfile
+          from pathlib import Path
+          import requests
+          repo=os.environ['GITHUB_REPOSITORY']
+          token=os.environ['GH_TOKEN']
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+          api=f'https://api.github.com/repos/{repo}'
+          session=requests.Session(); session.headers.update(headers)
+          artifact=None
+          for name in ('soccer-backtest-state-v12','soccer-backtest-state-v9'):
+              r=session.get(f'{api}/actions/artifacts',params={'name':name,'per_page':100},timeout=60)
+              r.raise_for_status()
+              items=[a for a in r.json().get('artifacts',[]) if not a.get('expired',False)]
+              if items:
+                  artifact=max(items,key=lambda a:a.get('created_at',''))
+                  break
+          if not artifact:
+              print('[STATE] no prior artifact')
+              raise SystemExit(0)
+          print(f"[STATE] restoring artifact id={artifact['id']} name={artifact['name']} created={artifact.get('created_at')}")
+          r=session.get(artifact['archive_download_url'],timeout=120)
+          r.raise_for_status()
+          with tempfile.TemporaryDirectory() as td:
+              with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                  z.extractall(td)
+              root=Path(td)
+              checkpoint=root/'backtest_checkpoint_v9.pkl.gz'
+              if checkpoint.exists(): shutil.copy2(checkpoint,Path('backtest_checkpoint_v9.pkl.gz'))
+              cache=root/'cache'
+              if cache.exists():
+                  dst=Path('cache'); dst.mkdir(exist_ok=True)
+                  for src in cache.rglob('*'):
+                      rel=src.relative_to(cache); out=dst/rel
+                      if src.is_dir(): out.mkdir(parents=True,exist_ok=True)
+                      else: out.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,out)
+              print('[STATE] restored checkpoint/cache only; source code remains from current commit')
+          PY
       - name: Run V12 chronological backtest
         env:
           MAX_RUNTIME_SECONDS: "5100"
@@ -103,14 +138,8 @@ jobs:
         with:
           name: soccer-backtest-state-v12
           path: |
-            backtest.py
-            v12_runner.py
             backtest_checkpoint_v9.pkl.gz
-            BACKTEST_COMPLETE_V9
-            BACKTEST_COMPLETE_V12
             cache/
-            *_v9.csv
-            *_v12.csv
           if-no-files-found: ignore
           retention-days: 90
       - name: Persist verified state
@@ -119,7 +148,7 @@ jobs:
           set +e
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backtest.py v12_runner.py backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12 '*_v9.csv' '*_v12.csv' cache/ 2>/dev/null
-          if git diff --cached --quiet; then echo '[COMMIT] no changes'; else git commit -m 'Persist verified Soccer V12 state'; git push origin HEAD:main; fi
+          git add backtest_checkpoint_v9.pkl.gz cache/ 2>/dev/null
+          if git diff --cached --quiet; then echo '[COMMIT] no state changes'; else git commit -m 'Persist verified Soccer V12 state'; git push origin HEAD:main; fi
 
 # Concurrent production rerun trigger: workflow revision only.
