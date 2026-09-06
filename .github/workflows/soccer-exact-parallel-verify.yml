@@ -1,0 +1,175 @@
+name: Soccer Exact Parallel Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: soccer-exact-parallel-verification
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  baseline:
+    runs-on: [self-hosted, macOS, X64]
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+      - name: Setup Python
+        run: |
+          set -euo pipefail
+          VENV="$HOME/.soccer-v12-venv"
+          python3 -m venv "$VENV" 2>/dev/null || true
+          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
+          MARKER="$VENV/.requirements-$REQ_HASH"
+          if [ ! -f "$MARKER" ]; then
+            "$VENV/bin/python" -m pip install --upgrade pip
+            "$VENV/bin/python" -m pip install -r requirements.txt
+            find "$VENV" -maxdepth 1 -name '.requirements-*' -type f -delete
+            touch "$MARKER"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Fresh canonical baseline
+        env:
+          MAX_RUNTIME_SECONDS: "5100"
+          ENABLE_SOFASCORE: "1"
+          SOFASCORE_DETAILS: "0"
+          ENABLE_UNDERSTAT: "1"
+          INCLUDE_CLUB_FRIENDLIES: "1"
+          FRIENDLY_MIN_YEAR: "2010"
+          FRIENDLY_MAX_PAGES: "250"
+        run: |
+          set -euo pipefail
+          rm -f backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12
+          rm -rf exact_parallel/baseline exact_parallel/out
+          mkdir -p exact_parallel/baseline
+          python -m py_compile backtest.py v12_runner.py
+          python v12_runner.py
+          test -s backtest_results_v12.csv
+          test -s BACKTEST_COMPLETE_V12
+          cp backtest_results_v12.csv exact_parallel/baseline/backtest_results_v12.csv
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root=Path('cache'); out=Path('exact_parallel/baseline/cache_manifest.sha256')
+          rows=[]
+          for p in sorted(x for x in root.rglob('*') if x.is_file()) if root.exists() else []:
+              rows.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(root)))
+          out.write_text('\n'.join(rows)+'\n',encoding='utf-8')
+          print('[SNAPSHOT] cache files=',len(rows))
+          PY
+      - name: Upload frozen input snapshot and baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-exact-input-${{ github.run_id }}
+          path: |
+            cache/
+            exact_parallel/baseline/backtest_results_v12.csv
+            exact_parallel/baseline/cache_manifest.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  worker:
+    needs: baseline
+    strategy:
+      fail-fast: true
+      max-parallel: 4
+      matrix:
+        worker: [0, 1, 2, 3]
+    runs-on: [self-hosted, macOS, X64]
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+      - name: Setup Python
+        run: |
+          set -euo pipefail
+          VENV="$HOME/.soccer-v12-venv"
+          python3 -m venv "$VENV" 2>/dev/null || true
+          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
+          MARKER="$VENV/.requirements-$REQ_HASH"
+          if [ ! -f "$MARKER" ]; then
+            "$VENV/bin/python" -m pip install --upgrade pip
+            "$VENV/bin/python" -m pip install -r requirements.txt
+            find "$VENV" -maxdepth 1 -name '.requirements-*' -type f -delete
+            touch "$MARKER"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Restore frozen input snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: soccer-exact-input-${{ github.run_id }}
+          path: .
+      - name: Verify frozen snapshot
+        run: |
+          set -euo pipefail
+          test -s exact_parallel/baseline/backtest_results_v12.csv
+          test -s exact_parallel/baseline/cache_manifest.sha256
+          test -d cache
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root=Path('cache'); expected=Path('exact_parallel/baseline/cache_manifest.sha256').read_text().splitlines(); actual=[]
+          for p in sorted(x for x in root.rglob('*') if x.is_file()):
+              actual.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(root)))
+          if expected != actual: raise SystemExit('FROZEN INPUT SNAPSHOT MISMATCH')
+          print('[SNAPSHOT] exact match')
+          PY
+      - name: Exact replay and shard
+        env:
+          WORKER_ID: ${{ matrix.worker }}
+          WORKER_COUNT: "4"
+          GITHUB_SHA: ${{ github.sha }}
+        run: python exact_parallel/worker.py
+      - name: Upload worker result
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-exact-worker-${{ matrix.worker }}-${{ github.run_id }}
+          path: exact_parallel/out/
+          if-no-files-found: error
+          retention-days: 7
+
+  aggregate:
+    needs: worker
+    runs-on: [self-hosted, macOS, X64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+      - name: Restore baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: soccer-exact-input-${{ github.run_id }}
+          path: .
+      - name: Restore all workers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: soccer-exact-worker-*-${{ github.run_id }}
+          path: exact_parallel/out
+          merge-multiple: true
+      - name: Strict equality gate
+        run: |
+          set -euo pipefail
+          python exact_parallel/aggregate.py
+          cat exact_parallel/equality_gate.json
+      - name: Upload verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-exact-parallel-report-${{ github.run_id }}
+          path: |
+            exact_parallel/equality_gate.json
+            exact_parallel/merged_backtest_results_v12.csv
+          if-no-files-found: error
+          retention-days: 30
