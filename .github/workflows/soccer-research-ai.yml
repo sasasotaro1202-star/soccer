@@ -22,6 +22,8 @@ jobs:
       CANDIDATE_MIN_TRAIN: '260'
       PYTHONUNBUFFERED: '1'
       RESEARCH_RUNNER: macOS-self-hosted
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_RESEARCH_MODEL: gpt-5.6-luna
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,6 +37,12 @@ jobs:
           test "$(uname -m)" = "x86_64"
           python3 --version
           echo "Mac self-hosted research runner verified"
+
+      - name: Verify OpenAI secret is available
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}" || { echo "OPENAI_API_KEY GitHub Secret is not configured"; exit 1; }
+          echo "OpenAI API secret detected; value is intentionally not printed."
 
       - name: Setup Python environment
         run: |
