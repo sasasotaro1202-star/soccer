@@ -107,13 +107,20 @@ jobs:
                   except Exception as e:
                       dispatch_status='failed'; dispatch_workflow=workflow_file
                       print(f'[HEAL] dispatch failed for {workflow_file}: {e}')
-              if prod and prod.get('conclusion')=='success' and (not research or research['created_at'] < prod['created_at']):
+
+              # If production failed/cancelled and its automatic 3-attempt retry
+              # window is exhausted, schedule a fresh production recovery cycle.
+              # This never runs while a production/research stage is active.
+              if prod and prod.get('conclusion') in ('failure','cancelled','timed_out'):
+                  if event_id != str(prod['id']) or event_attempt >= 3:
+                      action='dispatch-production-recovery'; dispatch('soccer-backtest.yml')
+              elif prod and prod.get('conclusion')=='success' and (not research or research['created_at'] < prod['created_at']):
                   action='dispatch-research'; dispatch('soccer-research-ai.yml')
               elif research and research.get('conclusion')=='success' and (not prod or prod['created_at'] < research['created_at']):
                   action='dispatch-production'; dispatch('soccer-backtest.yml')
 
           latest={
-            'version':'soccer-self-heal-v6','time':now,'action':action,
+            'version':'soccer-self-heal-v7','time':now,'action':action,
             'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,
             'production_active':sum(r['name']=='Soccer Backtest V12 - Hardened Production' for r in active),
             'research_active':sum(r['name']=='Soccer V12 Autonomous Research AI' for r in active),
