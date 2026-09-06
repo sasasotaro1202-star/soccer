@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # Use an isolated hosted macOS runner. The production backtest is also
+    # hosted, so this audit cannot block or consume the user's Mac runner.
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - name: Checkout
