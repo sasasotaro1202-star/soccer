@@ -41,5 +41,6 @@ v12_runner.build_v12()
 full=pd.read_csv(ROOT/"backtest_results_v12.csv",low_memory=False)
 if len(full)!=cursor: raise SystemExit(f"V12 cardinality mismatch {len(full)}!={cursor}")
 shard=full.iloc[start:end].copy(); shard.insert(0,"__parallel_row",np.arange(start,end,dtype=int)); shard.to_csv(OUT/f"soccer_worker_{W}.csv",index=False)
+if W==3: shutil.copy2(backtest.CHECKPOINT,OUT/"soccer_final_state.pkl.gz")
 meta={"worker":W,"count":N,"start":start,"end":end,"rows_total":len(full),"rows_shard":len(shard),"code_sha":os.environ.get("GITHUB_SHA","")}
 (OUT/f"soccer_worker_{W}.json").write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding="utf-8"); print(json.dumps(meta,ensure_ascii=False))
