@@ -6,6 +6,8 @@ on:
       - Soccer Backtest V12 - Hardened Production
       - Soccer V12 Autonomous Research AI
     types: [completed]
+  schedule:
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -22,38 +24,71 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Inspect and retry failed autonomous jobs
+      - name: Diagnose, retry and close any broken chain
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_RUN_ID: ${{ github.event.workflow_run.id }}
-          TARGET_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          TARGET_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          TARGET_WORKFLOW: ${{ github.event.workflow_run.name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
+        shell: bash
         run: |
           set -euo pipefail
           repo='${{ github.repository }}'
           mkdir -p self_heal
           now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo '{"version":"soccer-self-heal-v2","time":"'"$now"'","target_run":"'"${TARGET_RUN_ID:-}"'","target_workflow":"'"${TARGET_WORKFLOW:-}"'"}' > self_heal/latest.json
-          if [ -n "${TARGET_RUN_ID}" ] && [ "${TARGET_CONCLUSION}" = "failure" ] && [ "${TARGET_ATTEMPT:-1}" -lt 3 ]; then
-            echo "Retrying failed workflow run ${TARGET_RUN_ID} (${TARGET_WORKFLOW}), attempt ${TARGET_ATTEMPT}" | tee -a self_heal/latest.log
-            gh run rerun "${TARGET_RUN_ID}" --failed --repo "${repo}"
-          else
-            echo "No automatic retry required. run=${TARGET_RUN_ID:-manual} conclusion=${TARGET_CONCLUSION:-n/a} attempt=${TARGET_ATTEMPT:-n/a}" | tee -a self_heal/latest.log
+          echo "[HEAL] ${now} event=${EVENT_WORKFLOW:-scheduled} run=${EVENT_RUN_ID:-none} conclusion=${EVENT_CONCLUSION:-none} attempt=${EVENT_ATTEMPT:-none}"
+
+          # First, retry a failed event at most twice after the original attempt.
+          if [ -n "${EVENT_RUN_ID}" ] && [ "${EVENT_CONCLUSION}" = "failure" ] && [ "${EVENT_ATTEMPT:-1}" -lt 3 ]; then
+            echo "[HEAL] retrying failed run ${EVENT_RUN_ID}"
+            gh run rerun "${EVENT_RUN_ID}" --failed --repo "${repo}" || true
           fi
-          gh run list --repo "${repo}" --limit 20 --json databaseId,name,status,conclusion,attempt,createdAt,headSha > self_heal/recent_runs.json
+
+          # Never dispatch a second copy while either autonomous stage is running.
+          active=$(gh run list --repo "${repo}" --limit 30 --json name,status --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | map(.name) | unique | join("|")')
+          echo "[HEAL] active=${active}"
+          if echo "|${active}|" | grep -q '|Soccer Backtest V12 - Hardened Production|Soccer V12 Autonomous Research AI|'; then
+            echo '[HEAL] autonomous stage already active; no dispatch'
+            exit 0
+          fi
+
+          # Inspect recent completed runs. The explicit dispatches are the primary chain;
+          # this watchdog repairs a missed dispatch or an external/manual interruption.
+          runs=$(gh run list --repo "${repo}" --limit 30 --json databaseId,name,status,conclusion,createdAt,headSha,attempt)
+          echo "${runs}" > self_heal/recent_runs.json
+
+          prod=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") and .status == "completed"] | sort_by(.createdAt) | last // empty')
+          research=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") and .status == "completed"] | sort_by(.createdAt) | last // empty')
+
+          prod_id=$(echo "${prod}" | jq -r '.databaseId // empty')
+          prod_conclusion=$(echo "${prod}" | jq -r '.conclusion // empty')
+          prod_time=$(echo "${prod}" | jq -r '.createdAt // empty')
+          research_conclusion=$(echo "${research}" | jq -r '.conclusion // empty')
+          research_time=$(echo "${research}" | jq -r '.createdAt // empty')
+
+          action='none'
+          if [ "${prod_conclusion}" = "success" ] && { [ -z "${research_time}" ] || [[ "${research_time}" < "${prod_time}" ]]; }; then
+            action='dispatch-research'
+            gh workflow run soccer-research-ai.yml --repo "${repo}"
+          elif [ "${research_conclusion}" = "success" ] && { [ -z "${prod_time}" ] || [[ "${prod_time}" < "${research_time}" ]]; }; then
+            action='dispatch-production'
+            gh workflow run soccer-backtest.yml --repo "${repo}"
+          fi
+
+          jq -n --arg now "${now}" --arg action "${action}" --arg prod "${prod_id}" --arg pc "${prod_conclusion}" --arg pt "${prod_time}" --arg rc "${research_conclusion}" --arg rt "${research_time}" '{version:"soccer-self-heal-v3",time:$now,action:$action,latest_production_run:$prod,latest_production_conclusion:$pc,latest_production_created:$pt,latest_research_conclusion:$rc,latest_research_created:$rt}' > self_heal/latest.json
 
       - name: Persist self-heal diagnostics
         if: always()
         run: |
-          set -euo pipefail
+          set +e
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add self_heal/latest.json self_heal/latest.log self_heal/recent_runs.json
+          git add self_heal/latest.json self_heal/recent_runs.json 2>/dev/null
           if git diff --cached --quiet; then
             echo '[SELF-HEAL] no diagnostic changes.'
           else
