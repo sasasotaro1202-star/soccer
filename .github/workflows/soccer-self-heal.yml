@@ -33,6 +33,14 @@ jobs:
           set -euo pipefail
           test "$(uname -s)" = "Darwin"
           test "$(uname -m)" = "x86_64"
+          if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+            if ! command -v brew >/dev/null 2>&1; then
+              echo '[SELF-HEAL] Homebrew is required to bootstrap gh/jq on this runner.'
+              exit 1
+            fi
+            command -v gh >/dev/null 2>&1 || brew install gh
+            command -v jq >/dev/null 2>&1 || brew install jq
+          fi
           command -v gh
           command -v jq
 
