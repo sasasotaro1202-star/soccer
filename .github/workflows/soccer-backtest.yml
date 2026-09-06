@@ -100,7 +100,7 @@ jobs:
           INCLUDE_CLUB_FRIENDLIES: "1"
           FRIENDLY_MIN_YEAR: "2010"
           FRIENDLY_MAX_PAGES: "250"
-        run: python v12_runner.py
+        run: caffeinate -dimsu python v12_runner.py
       - name: Verify outputs and prediction integrity
         run: |
           set -euo pipefail
