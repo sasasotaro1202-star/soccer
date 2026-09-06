@@ -10,7 +10,7 @@ permissions:
   contents: write
   actions: write
 concurrency:
-  group: soccer-backtest-v12-production-v8
+  group: soccer-backtest-v12-production-v9
   cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
@@ -26,8 +26,20 @@ jobs:
           set -euo pipefail
           VENV="$HOME/.soccer-v12-venv"
           python3 -m venv "$VENV" 2>/dev/null || true
-          "$VENV/bin/python" -m pip install --upgrade pip
-          "$VENV/bin/python" -m pip install -r requirements.txt
+          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
+          MARKER="$VENV/.requirements-$REQ_HASH"
+          if [ ! -f "$MARKER" ]; then
+            "$VENV/bin/python" -m pip install --upgrade pip
+            "$VENV/bin/python" -m pip install -r requirements.txt
+            find "$VENV" -maxdepth 1 -name '.requirements-*' -type f -delete
+            touch "$MARKER"
+          else
+            echo "[DEPS] requirements unchanged; reusing persistent environment"
+          fi
+          "$VENV/bin/python" - <<'PY'
+          import numpy,pandas,requests
+          print('[DEPS] core imports OK')
+          PY
           echo "$VENV/bin" >> "$GITHUB_PATH"
       - name: V12 preflight and integrity gate
         run: |
@@ -150,5 +162,3 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backtest_checkpoint_v9.pkl.gz cache/ 2>/dev/null
           if git diff --cached --quiet; then echo '[COMMIT] no state changes'; else git commit -m 'Persist verified Soccer V12 state'; git push origin HEAD:main; fi
-
-# Concurrent production rerun trigger: workflow revision only.
