@@ -124,8 +124,7 @@ jobs:
           FRIENDLY_MIN_YEAR: "2010"
           FRIENDLY_MAX_PAGES: "250"
         run: python v12_runner.py
-      - name: Verify outputs
-        if: always()
+      - name: Verify outputs and prediction integrity
         run: |
           set -euo pipefail
           python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
@@ -144,21 +143,49 @@ jobs:
           if len(d)<100: raise SystemExit(f'too few rows: {len(d)}')
           print(f'[V12] PASS rows={len(d)}')
           PY
-      - name: Upload state
-        if: always()
+      - name: Upload verified state artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: soccer-backtest-state-v12
           path: |
             backtest_checkpoint_v9.pkl.gz
             cache/
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 90
-      - name: Persist verified state
-        if: always()
+      - name: Upload failure diagnostics without touching production state
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-backtest-failure-${{ github.run_id }}
+          path: |
+            backtest_results_v12.csv
+            overall_summary_v12.csv
+            BACKTEST_COMPLETE_V12
+            backtest_checkpoint_v9.pkl.gz
+            cache/
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Persist verified state atomically
+        if: success()
         run: |
-          set +e
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backtest_checkpoint_v9.pkl.gz cache/ 2>/dev/null
-          if git diff --cached --quiet; then echo '[COMMIT] no state changes'; else git commit -m 'Persist verified Soccer V12 state'; git push origin HEAD:main; fi
+          git add backtest_checkpoint_v9.pkl.gz cache/
+          if git diff --cached --quiet; then
+            echo '[COMMIT] no verified state changes'
+            exit 0
+          fi
+          git commit -m 'Persist verified Soccer V12 state'
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo "[PERSIST] verified state push succeeded on attempt $attempt"
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            sleep 3
+          done
+          echo '[PERSIST] verified state push failed after 3 attempts'
+          exit 1
