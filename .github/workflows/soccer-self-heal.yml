@@ -35,6 +35,7 @@ jobs:
           test "$(uname -m)" = "x86_64"
           command -v python3
           command -v curl
+          test -f /etc/ssl/cert.pem
           echo '[SELF-HEAL] runner OK; using Python stdlib + GitHub REST API (no gh/jq/Homebrew dependency).'
 
       - name: Diagnose, retry and close any broken chain
@@ -51,14 +52,14 @@ jobs:
           mkdir -p self_heal
           export PYTHONUNBUFFERED=1
           python3 - <<'PY'
-          import json, os, ssl, urllib.request, urllib.error, time
+          import json, os, ssl, urllib.request, time
           from pathlib import Path
 
           repo=os.environ['GITHUB_REPOSITORY']
           token=os.environ['GH_TOKEN']
           api=f'https://api.github.com/repos/{repo}'
           headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
-          ctx=ssl.create_default_context()
+          ctx=ssl.create_default_context(cafile='/etc/ssl/cert.pem')
 
           def req(path, method='GET', data=None):
               r=urllib.request.Request(api+path, method=method, headers=headers)
@@ -112,7 +113,7 @@ jobs:
                   action='dispatch-production'; dispatch('soccer-backtest.yml')
 
           latest={
-            'version':'soccer-self-heal-v5','time':now,'action':action,
+            'version':'soccer-self-heal-v6','time':now,'action':action,
             'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,
             'production_active':sum(r['name']=='Soccer Backtest V12 - Hardened Production' for r in active),
             'research_active':sum(r['name']=='Soccer V12 Autonomous Research AI' for r in active),
