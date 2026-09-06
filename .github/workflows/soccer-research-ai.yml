@@ -72,10 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           . .venv-research/bin/activate
-          python -m py_compile v12_auto_research.py v12_runner.py engine/*.py
+          python -m py_compile v12_auto_research.py openai_research_advisor.py v12_runner.py engine/*.py
           python - <<'PY'
           import ast,glob
-          for p in ['v12_auto_research.py']+glob.glob('engine/*.py'):
+          for p in ['v12_auto_research.py','openai_research_advisor.py']+glob.glob('engine/*.py'):
               ast.parse(open(p,encoding='utf-8').read(),filename=p)
           print('research preflight: PASS')
           PY
@@ -85,6 +85,13 @@ jobs:
           set -euo pipefail
           . .venv-research/bin/activate
           python v12_auto_research.py
+
+      - name: Generate OpenAI research advisory
+        run: |
+          set -euo pipefail
+          . .venv-research/bin/activate
+          python openai_research_advisor.py
+          python -m json.tool research_ai_advice.json >/dev/null
 
       - name: Validate research outputs
         run: |
@@ -97,6 +104,7 @@ jobs:
           test -s model_comparison_v12.json
           test -s model_registry.json
           test -s research_manifest.json
+          test -s research_ai_advice.json
           python3 - <<'PY'
           import json
           p=json.load(open('candidate_evaluations.json',encoding='utf-8'))
@@ -106,7 +114,10 @@ jobs:
           assert c.get('fail_closed') is True
           m=json.load(open('research_manifest.json',encoding='utf-8'))
           assert m.get('policy') == 'prior_rows_only'
-          print('candidate OOS + fail-closed promotion gate + provenance: PASS')
+          a=json.load(open('research_ai_advice.json',encoding='utf-8'))
+          assert a.get('advisory_only') is True
+          assert a.get('source_policy') == 'prior_rows_only'
+          print('candidate OOS + fail-closed promotion gate + provenance + OpenAI advisory: PASS')
           PY
 
       - name: Save research state
@@ -115,7 +126,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add research_state.json research_history.json research_manifest.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
+          git add research_state.json research_history.json research_manifest.json research_ai_advice.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
           if git diff --cached --quiet; then
             echo '[COMMIT] no research-state changes.'
           else
@@ -139,6 +150,7 @@ jobs:
             research_state.json
             research_history.json
             research_manifest.json
+            research_ai_advice.json
           if-no-files-found: ignore
           retention-days: 30
 
