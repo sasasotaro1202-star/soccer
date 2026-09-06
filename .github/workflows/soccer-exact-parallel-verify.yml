@@ -37,7 +37,7 @@ jobs:
             touch "$MARKER"
           fi
           echo "$VENV/bin" >> "$GITHUB_PATH"
-      - name: Fresh canonical baseline
+      - name: Fresh canonical baseline and boundary snapshots
         env:
           MAX_RUNTIME_SECONDS: "5100"
           ENABLE_SOFASCORE: "1"
@@ -51,11 +51,13 @@ jobs:
           rm -f backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12
           rm -rf exact_parallel/baseline exact_parallel/out
           mkdir -p exact_parallel/baseline
-          python -m py_compile backtest.py v12_runner.py
-          python v12_runner.py
-          test -s backtest_results_v12.csv
-          test -s BACKTEST_COMPLETE_V12
-          cp backtest_results_v12.csv exact_parallel/baseline/backtest_results_v12.csv
+          python -m py_compile backtest.py v12_runner.py exact_parallel/prepare.py exact_parallel/worker.py exact_parallel/aggregate.py
+          python exact_parallel/prepare.py
+          test -s exact_parallel/baseline/backtest_results_v12.csv
+          test -s exact_parallel/baseline/boundaries.json
+          test -s exact_parallel/baseline/checkpoint_boundary_1.pkl.gz
+          test -s exact_parallel/baseline/checkpoint_boundary_2.pkl.gz
+          test -s exact_parallel/baseline/checkpoint_boundary_3.pkl.gz
           python - <<'PY'
           import hashlib
           from pathlib import Path
@@ -66,14 +68,13 @@ jobs:
           out.write_text('\n'.join(rows)+'\n',encoding='utf-8')
           print('[SNAPSHOT] cache files=',len(rows))
           PY
-      - name: Upload frozen input snapshot and baseline
+      - name: Upload frozen input, baseline and boundary snapshots
         uses: actions/upload-artifact@v4
         with:
           name: soccer-exact-input-${{ github.run_id }}
           path: |
             cache/
-            exact_parallel/baseline/backtest_results_v12.csv
-            exact_parallel/baseline/cache_manifest.sha256
+            exact_parallel/baseline/
           if-no-files-found: error
           retention-days: 7
 
@@ -113,8 +114,10 @@ jobs:
       - name: Verify frozen snapshot
         run: |
           set -euo pipefail
-          test -s exact_parallel/baseline/backtest_results_v12.csv
-          test -s exact_parallel/baseline/cache_manifest.sha256
+          test -s exact_parallel/baseline/boundaries.json
+          test -s exact_parallel/baseline/checkpoint_boundary_1.pkl.gz
+          test -s exact_parallel/baseline/checkpoint_boundary_2.pkl.gz
+          test -s exact_parallel/baseline/checkpoint_boundary_3.pkl.gz
           test -d cache
           python - <<'PY'
           import hashlib
@@ -125,7 +128,7 @@ jobs:
           if expected != actual: raise SystemExit('FROZEN INPUT SNAPSHOT MISMATCH')
           print('[SNAPSHOT] exact match')
           PY
-      - name: Exact replay and shard
+      - name: Execute assigned chronological shard
         env:
           WORKER_ID: ${{ matrix.worker }}
           WORKER_COUNT: "4"
