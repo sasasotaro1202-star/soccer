@@ -22,8 +22,6 @@ on:
       - 'model_registry.json'
       - 'research_manifest.json'
       - 'self_heal/**'
-  schedule:
-    - cron: '17,47 * * * *'
 
 permissions:
   contents: write
