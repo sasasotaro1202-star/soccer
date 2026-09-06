@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   heal:
-    runs-on: macos-15-intel
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -31,11 +31,11 @@ jobs:
       - name: Verify self-heal runner
         run: |
           set -euo pipefail
-          test "$(uname -s)" = "Darwin"
+          test "$(uname -s)" = "Linux"
           test "$(uname -m)" = "x86_64"
           command -v python3
           command -v curl
-          echo '[SELF-HEAL] hosted Intel macOS runner OK; using Python stdlib + GitHub REST API.'
+          echo '[SELF-HEAL] hosted Ubuntu x64 runner OK; using Python stdlib + GitHub REST API.'
 
       - name: Diagnose, retry and close any broken chain
         env:
@@ -63,11 +63,9 @@ jobs:
           def req(path, method='GET', data=None):
               r=urllib.request.Request(api+path, method=method, headers=headers)
               if data is not None:
-                  r.data=json.dumps(data).encode()
-                  r.add_header('Content-Type','application/json')
+                  r.data=json.dumps(data).encode(); r.add_header('Content-Type','application/json')
               with urllib.request.urlopen(r, context=ctx, timeout=30) as x:
-                  raw=x.read()
-                  return json.loads(raw) if raw else {}
+                  raw=x.read(); return json.loads(raw) if raw else {}
 
           now=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
           event_id=os.environ.get('EVENT_RUN_ID','')
@@ -90,12 +88,9 @@ jobs:
           prod=max(prod,key=lambda r:r['created_at'],default=None)
           research=max(research,key=lambda r:r['created_at'],default=None)
 
-          action='none'
-          dispatch_status='not-needed'
-          dispatch_workflow='none'
+          action='none'; dispatch_status='not-needed'; dispatch_workflow='none'
           if active:
-              action='none-active'
-              print('[HEAL] autonomous stage already active; no dispatch')
+              action='none-active'; print('[HEAL] autonomous stage already active; no dispatch')
           else:
               def dispatch(workflow_file):
                   global dispatch_status, dispatch_workflow
@@ -115,16 +110,11 @@ jobs:
               elif research and research.get('conclusion')=='success' and (not prod or prod['created_at'] < research['created_at']):
                   action='dispatch-production'; dispatch('soccer-backtest.yml')
 
-          latest={
-            'version':'soccer-self-heal-v9','time':now,'action':action,
-            'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,
-            'production_active':sum(r['name']=='Soccer Backtest V12 - Hardened Production' for r in active),
-            'research_active':sum(r['name']=='Soccer V12 Autonomous Research AI' for r in active),
-            'latest_production_run':prod['id'] if prod else None,
-            'latest_production_conclusion':prod['conclusion'] if prod else None,
-            'latest_research_run':research['id'] if research else None,
-            'latest_research_conclusion':research['conclusion'] if research else None
-          }
+          latest={'version':'soccer-self-heal-v9','time':now,'action':action,'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,
+                  'production_active':sum(r['name']=='Soccer Backtest V12 - Hardened Production' for r in active),
+                  'research_active':sum(r['name']=='Soccer V12 Autonomous Research AI' for r in active),
+                  'latest_production_run':prod['id'] if prod else None,'latest_production_conclusion':prod['conclusion'] if prod else None,
+                  'latest_research_run':research['id'] if research else None,'latest_research_conclusion':research['conclusion'] if research else None}
           Path('self_heal/latest.json').write_text(json.dumps(latest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           Path('self_heal/recent_runs.json').write_text(json.dumps(runs,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           PY
