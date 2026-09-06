@@ -10,7 +10,7 @@ permissions:
   contents: write
   actions: write
 concurrency:
-  group: soccer-backtest-v12-production-v6
+  group: soccer-backtest-v12-production-v7
   cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
@@ -29,7 +29,7 @@ jobs:
           "$VENV/bin/python" -m pip install --upgrade pip
           "$VENV/bin/python" -m pip install -r requirements.txt
           echo "$VENV/bin" >> "$GITHUB_PATH"
-      - name: Production hardening and preflight
+      - name: V12 preflight and integrity gate
         run: |
           set -euo pipefail
           python - <<'PY'
