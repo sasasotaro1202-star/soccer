@@ -33,16 +33,9 @@ jobs:
           set -euo pipefail
           test "$(uname -s)" = "Darwin"
           test "$(uname -m)" = "x86_64"
-          if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
-            if ! command -v brew >/dev/null 2>&1; then
-              echo '[SELF-HEAL] Homebrew is required to bootstrap gh/jq on this runner.'
-              exit 1
-            fi
-            command -v gh >/dev/null 2>&1 || brew install gh
-            command -v jq >/dev/null 2>&1 || brew install jq
-          fi
-          command -v gh
-          command -v jq
+          command -v python3
+          command -v curl
+          echo '[SELF-HEAL] runner OK; using Python stdlib + GitHub REST API (no gh/jq/Homebrew dependency).'
 
       - name: Diagnose, retry and close any broken chain
         env:
@@ -51,88 +44,86 @@ jobs:
           EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          repo='${{ github.repository }}'
           mkdir -p self_heal
-          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "[HEAL] ${now} event=${EVENT_WORKFLOW:-scheduled} run=${EVENT_RUN_ID:-none} conclusion=${EVENT_CONCLUSION:-none} attempt=${EVENT_ATTEMPT:-none}"
+          export PYTHONUNBUFFERED=1
+          python3 - <<'PY'
+          import json, os, ssl, urllib.request, urllib.error, time
+          from pathlib import Path
 
-          if [ -n "${EVENT_RUN_ID:-}" ] && [ "${EVENT_CONCLUSION:-}" = "failure" ]; then
-            attempt="${EVENT_ATTEMPT:-1}"
-            if [ "${attempt}" -lt 3 ]; then
-              echo "[HEAL] retrying failed run ${EVENT_RUN_ID}, attempt=${attempt}"
-              gh run rerun "${EVENT_RUN_ID}" --failed --repo "${repo}" || echo '[HEAL] rerun request failed; watchdog will retry later'
-            else
-              echo '[HEAL] retry budget exhausted for this run'
-            fi
-          fi
+          repo=os.environ['GITHUB_REPOSITORY']
+          token=os.environ['GH_TOKEN']
+          api=f'https://api.github.com/repos/{repo}'
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+          ctx=ssl.create_default_context()
 
-          active_json=$(gh run list --repo "${repo}" --limit 50 --json name,status)
-          prod_active=$(echo "${active_json}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | length')
-          research_active=$(echo "${active_json}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | length')
-          echo "[HEAL] prod_active=${prod_active} research_active=${research_active}"
-          if [ "${prod_active}" -gt 0 ] || [ "${research_active}" -gt 0 ]; then
-            echo '[HEAL] autonomous stage already active; no dispatch'
-            jq -n --arg now "${now}" --arg action "none-active" --argjson pa "${prod_active}" --argjson ra "${research_active}" '{version:"soccer-self-heal-v4",time:$now,action:$action,production_active:$pa,research_active:$ra}' > self_heal/latest.json
-            exit 0
-          fi
+          def req(path, method='GET', data=None):
+              r=urllib.request.Request(api+path, method=method, headers=headers)
+              if data is not None:
+                  r.data=json.dumps(data).encode()
+                  r.add_header('Content-Type','application/json')
+              with urllib.request.urlopen(r, context=ctx, timeout=30) as x:
+                  raw=x.read()
+                  return json.loads(raw) if raw else {}
 
-          runs=$(gh run list --repo "${repo}" --limit 50 --json databaseId,name,status,conclusion,createdAt)
-          printf '%s\n' "${runs}" > self_heal/recent_runs.json
-          prod=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") | select(.status == "completed")] | sort_by(.createdAt) | last // empty')
-          research=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") | select(.status == "completed")] | sort_by(.createdAt) | last // empty')
+          now=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+          event_id=os.environ.get('EVENT_RUN_ID','')
+          event_conclusion=os.environ.get('EVENT_CONCLUSION','')
+          event_attempt=int(os.environ.get('EVENT_ATTEMPT','1') or 1)
+          event_workflow=os.environ.get('EVENT_WORKFLOW','scheduled')
+          print(f'[HEAL] {now} event={event_workflow} run={event_id or "none"} conclusion={event_conclusion or "none"} attempt={event_attempt}')
 
-          prod_id=$(echo "${prod}" | jq -r '.databaseId // empty')
-          prod_conclusion=$(echo "${prod}" | jq -r '.conclusion // empty')
-          prod_time=$(echo "${prod}" | jq -r '.createdAt // empty')
-          research_id=$(echo "${research}" | jq -r '.databaseId // empty')
-          research_conclusion=$(echo "${research}" | jq -r '.conclusion // empty')
-          research_time=$(echo "${research}" | jq -r '.createdAt // empty')
+          if event_id and event_conclusion == 'failure' and event_attempt < 3:
+              try:
+                  req(f'/actions/runs/{event_id}/rerun-failed-jobs','POST')
+                  print(f'[HEAL] requested rerun-failed-jobs for {event_id}')
+              except Exception as e:
+                  print(f'[HEAL] rerun request failed: {e}')
+
+          runs=req('/actions/runs?per_page=50')['workflow_runs']
+          active=[r for r in runs if r['name'] in ('Soccer Backtest V12 - Hardened Production','Soccer V12 Autonomous Research AI') and r['status'] in ('in_progress','queued','waiting','requested')]
+          prod=[r for r in runs if r['name']=='Soccer Backtest V12 - Hardened Production' and r['status']=='completed']
+          research=[r for r in runs if r['name']=='Soccer V12 Autonomous Research AI' and r['status']=='completed']
+          prod=max(prod,key=lambda r:r['created_at'],default=None)
+          research=max(research,key=lambda r:r['created_at'],default=None)
 
           action='none'
           dispatch_status='not-needed'
           dispatch_workflow='none'
+          if active:
+              action='none-active'
+              print('[HEAL] autonomous stage already active; no dispatch')
+          else:
+              def dispatch(workflow_file):
+                  global dispatch_status, dispatch_workflow
+                  try:
+                      req(f'/actions/workflows/{workflow_file}/dispatches','POST',{'ref':'main'})
+                      dispatch_status='success'; dispatch_workflow=workflow_file
+                      print(f'[HEAL] dispatched {workflow_file}')
+                  except Exception as e:
+                      dispatch_status='failed'; dispatch_workflow=workflow_file
+                      print(f'[HEAL] dispatch failed for {workflow_file}: {e}')
+              if prod and prod.get('conclusion')=='success' and (not research or research['created_at'] < prod['created_at']):
+                  action='dispatch-research'; dispatch('soccer-research-ai.yml')
+              elif research and research.get('conclusion')=='success' and (not prod or prod['created_at'] < research['created_at']):
+                  action='dispatch-production'; dispatch('soccer-backtest.yml')
 
-          dispatch_with_retry() {
-            workflow="$1"
-            for n in 1 2 3; do
-              if gh workflow run "${workflow}" --repo "${repo}"; then
-                echo "[HEAL] dispatched ${workflow} attempt=${n}"
-                dispatch_status='success'
-                dispatch_workflow="${workflow}"
-                return 0
-              fi
-              echo "[HEAL] dispatch ${workflow} attempt=${n} failed"
-              sleep $((n * 10))
-            done
-            dispatch_status='failed'
-            dispatch_workflow="${workflow}"
-            return 1
+          latest={
+            'version':'soccer-self-heal-v5','time':now,'action':action,
+            'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,
+            'production_active':sum(r['name']=='Soccer Backtest V12 - Hardened Production' for r in active),
+            'research_active':sum(r['name']=='Soccer V12 Autonomous Research AI' for r in active),
+            'latest_production_run':prod['id'] if prod else None,
+            'latest_production_conclusion':prod['conclusion'] if prod else None,
+            'latest_research_run':research['id'] if research else None,
+            'latest_research_conclusion':research['conclusion'] if research else None
           }
-
-          if [ "${prod_conclusion}" = "success" ] && { [ -z "${research_time}" ] || [[ "${research_time}" < "${prod_time}" ]]; }; then
-            action='dispatch-research'
-            dispatch_with_retry soccer-research-ai.yml || true
-          elif [ "${research_conclusion}" = "success" ] && { [ -z "${prod_time}" ] || [[ "${prod_time}" < "${research_time}" ]]; }; then
-            action='dispatch-production'
-            dispatch_with_retry soccer-backtest.yml || true
-          fi
-
-          jq -n \
-            --arg now "${now}" \
-            --arg action "${action}" \
-            --arg ds "${dispatch_status}" \
-            --arg dw "${dispatch_workflow}" \
-            --arg prod "${prod_id}" \
-            --arg pc "${prod_conclusion}" \
-            --arg pt "${prod_time}" \
-            --arg research "${research_id}" \
-            --arg rc "${research_conclusion}" \
-            --arg rt "${research_time}" \
-            '{version:"soccer-self-heal-v4",time:$now,action:$action,dispatch_status:$ds,dispatch_workflow:$dw,latest_production_run:$prod,latest_production_conclusion:$pc,latest_production_created:$pt,latest_research_run:$research,latest_research_conclusion:$rc,latest_research_created:$rt}' \
-            > self_heal/latest.json
+          Path('self_heal/latest.json').write_text(json.dumps(latest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          Path('self_heal/recent_runs.json').write_text(json.dumps(runs,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          PY
 
       - name: Persist self-heal diagnostics
         if: always()
