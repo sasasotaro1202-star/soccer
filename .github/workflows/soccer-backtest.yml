@@ -9,37 +9,30 @@ on:
 permissions:
   contents: write
   actions: write
-# Baseball keeps the single self-hosted Mac runner exclusively.
-# Soccer uses a separate GitHub-hosted macOS runner, so the two production backtests
-# execute independently and can run at the same time without competing for the same machine.
+# Baseball and Soccer each use an isolated hosted Intel macOS VM.
+# They can run simultaneously without sharing the user's self-hosted Mac.
 # Prediction logic, chronological OOS logic, inputs, safeguards and state gate are unchanged.
 concurrency:
-  group: soccer-backtest-v12-production-v11
+  group: soccer-backtest-v12-production-v12
   cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
 jobs:
   backtest:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 1}
-      - name: Setup persistent Python
+      - name: Setup Python
         run: |
           set -euo pipefail
-          VENV="$HOME/.soccer-v12-venv"
-          python3 -m venv "$VENV" 2>/dev/null || true
+          VENV="$RUNNER_TEMP/soccer-v12-venv"
+          python3 -m venv "$VENV"
           REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
-          MARKER="$VENV/.requirements-$REQ_HASH"
-          if [ ! -f "$MARKER" ]; then
-            "$VENV/bin/python" -m pip install --upgrade pip
-            "$VENV/bin/python" -m pip install -r requirements.txt
-            find "$VENV" -maxdepth 1 -name '.requirements-*' -type f -delete
-            touch "$MARKER"
-          else
-            echo "[DEPS] requirements unchanged; reusing persistent environment"
-          fi
+          echo "[DEPS] requirements_sha256=$REQ_HASH"
+          "$VENV/bin/python" -m pip install --upgrade pip
+          "$VENV/bin/python" -m pip install -r requirements.txt
           "$VENV/bin/python" - <<'PY'
           import numpy,pandas,requests
           print('[DEPS] core imports OK')
@@ -116,7 +109,7 @@ jobs:
                       rel=src.relative_to(cache); out=dst/rel
                       if src.is_dir(): out.mkdir(parents=True,exist_ok=True)
                       else: out.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,out)
-                  print('[STATE] restored checkpoint/cache only; source code remains from current commit')
+              print('[STATE] restored checkpoint/cache only; source code remains from current commit')
           PY
       - name: Run V12 chronological backtest
         env:
