@@ -4,49 +4,32 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths-ignore:
-      - '*_v9.csv'
-      - '*_v12.csv'
-      - 'backtest_checkpoint_v9.pkl.gz'
-      - 'BACKTEST_COMPLETE_V9'
-      - 'BACKTEST_COMPLETE_V12'
-      - 'cache/**'
-      - 'research_state.json'
-      - 'research_history.json'
-      - 'evaluation.json'
-      - 'failure_analysis.json'
-      - 'condition_analysis_v12.json'
-      - 'candidate_models.json'
-      - 'candidate_evaluations.json'
-      - 'model_comparison_v12.json'
-      - 'model_registry.json'
-      - 'research_manifest.json'
-      - 'self_heal/**'
+    paths-ignore: ["*_v9.csv", "*_v12.csv", "backtest_checkpoint_v9.pkl.gz", "BACKTEST_COMPLETE_V9", "BACKTEST_COMPLETE_V12", "cache/**", "research_state.json", "research_history.json", "evaluation.json", "failure_analysis.json", "condition_analysis_v12.json", "candidate_models.json", "candidate_evaluations.json", "model_comparison_v12.json", "model_registry.json", "research_manifest.json", "self_heal/**"]
 
 permissions:
   contents: write
   actions: write
 
 concurrency:
-  group: soccer-backtest-v12-production-v4
-  cancel-in-progress: false
+  group: soccer-backtest-v12-production-v5
+  cancel-in-progress: true
 
 env:
   PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
   backtest:
-    runs-on: [self-hosted, macOS, X64]
-    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+        with: {fetch-depth: 1}
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.txt
       - name: Install dependencies
@@ -54,7 +37,7 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-      - name: Apply production hardening patches
+      - name: Production hardening and preflight
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -65,50 +48,44 @@ jobs:
           if marker not in s:
               anchor='''    aliases={\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
               replacement='''    aliases={\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united","manchester united fc":"manchester united",\n        "man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers","leicester":"leicester city","leeds":"leeds united",\n        "brighton":"brighton hove albion","sheffield utd":"sheffield united","norwich":"norwich city","qpr":"queens park rangers",\n        "west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
-              if anchor not in s: raise SystemExit('[PATCH] team_key alias anchor not found and hardening marker absent')
+              if anchor not in s: raise SystemExit('[PATCH] alias anchor not found')
               s=s.replace(anchor,replacement,1)
               old='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return ka==kb or ka in kb or kb in ka\n'''
               new='''def same_team(a,b):\n    ka,kb=team_key(a),team_key(b)\n    return bool(ka) and bool(kb) and ka == kb\n'''
               if old in s: s=s.replace(old,new,1)
-              elif 'def same_team(a,b):' in s and 'ka in kb' in s: s=re.sub(r'def same_team\\(a,b\\):\\n(?:    .*\\n){2}',new,s,count=1)
-              else: raise SystemExit('[PATCH] same_team implementation not found and hardening marker absent')
+              elif 'ka in kb' in s: s=re.sub(r'def same_team\\(a,b\\):\\n(?:    .*\\n){2}',new,s,count=1)
+              else: raise SystemExit('[PATCH] same_team not found')
               s += '\n# ' + marker + '\n'
               p.write_text(s,encoding='utf-8')
           r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8')
           safeguard='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
           if safeguard not in rs:
               rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+safeguard, 1)
-          if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] V12 prior-row safeguard marker missing')
-          r.write_text(rs,encoding='utf-8')
-          print('[PATCH] production hardening applied/idempotent')
+              r.write_text(rs,encoding='utf-8')
+          if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] prior-row safeguard missing')
           PY
-      - name: V12 preflight and integrity gate
-        run: |
-          set -euo pipefail
           python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
           python tests/smoke_test.py
           python soccer_audit.py
-      - name: Restore latest resumable V12/V9 engine state
+      - name: Restore resumable state
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v12&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
-          if [ -z "${ARTIFACT_ID}" ]; then ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty'); fi
-          if [ -n "${ARTIFACT_ID}" ]; then gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/state.zip; unzip -o /tmp/state.zip -d .; else echo '[STATE] no artifact'; fi
-      - name: Run V12 / resume chronological engine
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v12&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty')
+          if [ -z "$id" ]; then id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=soccer-backtest-state-v9&per_page=100" --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last.id // empty'); fi
+          if [ -n "$id" ]; then gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/$id/zip" > /tmp/state.zip; unzip -o /tmp/state.zip -d .; else echo '[STATE] no prior artifact'; fi
+      - name: Run V12 chronological backtest
         env:
-          MAX_RUNTIME_SECONDS: '3300'
-          ENABLE_SOFASCORE: '1'
-          SOFASCORE_DETAILS: '0'
-          ENABLE_UNDERSTAT: '1'
-          INCLUDE_CLUB_FRIENDLIES: '1'
-          FRIENDLY_MIN_YEAR: '2010'
-          FRIENDLY_MAX_PAGES: '250'
-          PYTHONUNBUFFERED: '1'
+          MAX_RUNTIME_SECONDS: "5100"
+          ENABLE_SOFASCORE: "1"
+          SOFASCORE_DETAILS: "0"
+          ENABLE_UNDERSTAT: "1"
+          INCLUDE_CLUB_FRIENDLIES: "1"
+          FRIENDLY_MIN_YEAR: "2010"
+          FRIENDLY_MAX_PAGES: "250"
         run: python v12_runner.py
-      - name: V12 post-run audit
+      - name: Verify V12 outputs
         if: always()
         run: |
           set -euo pipefail
@@ -117,25 +94,18 @@ jobs:
           test -s BACKTEST_COMPLETE_V12
           test -s backtest_results_v12.csv
           test -s overall_summary_v12.csv
-      - name: Validate V12 outputs
-        if: always()
-        run: |
-          set -euo pipefail
           python - <<'PY'
-          from pathlib import Path
           import numpy as np, pandas as pd
-          p=Path('backtest_results_v12.csv')
-          if not p.exists() or p.stat().st_size==0: raise SystemExit('V12 results missing/empty')
-          d=pd.read_csv(p,low_memory=False)
+          d=pd.read_csv('backtest_results_v12.csv',low_memory=False)
           need=['HomeProbV12','DrawProbV12','AwayProbV12','PredictedV12','Actual']
           miss=[c for c in need if c not in d.columns]
-          if miss: raise SystemExit(f'V12 columns missing: {miss}')
-          probs=d[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
-          if not np.all(np.isfinite(probs)) or not np.allclose(probs.sum(axis=1),1.0,atol=1e-6): raise SystemExit('invalid V12 probabilities')
-          if len(d)<100: raise SystemExit(f'V12 output suspiciously small: {len(d)} rows')
-          print(f'[V12] output validation PASS rows={len(d)}')
+          if miss: raise SystemExit(f'missing columns: {miss}')
+          p=d[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
+          if not np.all(np.isfinite(p)) or not np.allclose(p.sum(1),1.0,atol=1e-6): raise SystemExit('invalid probability rows')
+          if len(d)<100: raise SystemExit(f'too few rows: {len(d)}')
+          print(f'[V12] PASS rows={len(d)}')
           PY
-      - name: Upload V12 resumable state and results
+      - name: Upload resumable state
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -151,29 +121,11 @@ jobs:
             *_v12.csv
           if-no-files-found: ignore
           retention-days: 90
-          compression-level: 6
-      - name: Persist V12 state and results to main
+      - name: Persist verified state
         if: always()
-        shell: bash
         run: |
           set +e
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backtest.py v12_runner.py backtest_checkpoint_v9.pkl.gz BACKTEST_COMPLETE_V9 BACKTEST_COMPLETE_V12 '*_v9.csv' '*_v12.csv' cache/ 2>/dev/null
-          if git diff --cached --quiet; then echo '[COMMIT] no generated changes.'; else git commit -m 'Persist soccer V12 backtest state and results'; git push origin HEAD:main; fi
-      - name: Dispatch autonomous research after verified backtest
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if gh workflow run soccer-research-ai.yml --repo "${GITHUB_REPOSITORY}"; then
-              echo "[CHAIN] autonomous research dispatched on attempt ${attempt}"
-              exit 0
-            fi
-            echo "[CHAIN] research dispatch attempt ${attempt} failed; retrying"
-            sleep $((attempt * 10))
-          done
-          exit 1
+          if git diff --cached --quiet; then echo '[COMMIT] no generated changes'; else git commit -m 'Persist verified Soccer V12 state'; git push origin HEAD:main; fi
