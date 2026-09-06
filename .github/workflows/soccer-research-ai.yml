@@ -14,7 +14,7 @@ concurrency:
 jobs:
   research:
     name: V12 autonomous evaluation and research on Mac
-    runs-on: [self-hosted, macOS]
+    runs-on: [self-hosted, macOS, soccer]
     timeout-minutes: 60
     env:
       MAX_RUNTIME_SECONDS: '3300'
@@ -29,7 +29,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
       - name: Verify Mac runner
         run: |
           set -euo pipefail
@@ -37,13 +36,11 @@ jobs:
           test "$(uname -m)" = "x86_64"
           python3 --version
           echo "Mac self-hosted research runner verified"
-
       - name: Verify OpenAI secret is available
         run: |
           set -euo pipefail
           test -n "${OPENAI_API_KEY:-}" || { echo "OPENAI_API_KEY GitHub Secret is not configured"; exit 1; }
           echo "OpenAI API secret detected; value is intentionally not printed."
-
       - name: Setup Python environment
         run: |
           set -euo pipefail
@@ -51,7 +48,6 @@ jobs:
           . .venv-research/bin/activate
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
-
       - name: Research input integrity gate
         run: |
           set -euo pipefail
@@ -67,7 +63,6 @@ jobs:
           if len(p) < 100: raise SystemExit(f'suspiciously small V12 output: {len(p)}')
           print(f'research input integrity PASS rows={len(p)}')
           PY
-
       - name: Preflight
         run: |
           set -euo pipefail
@@ -79,20 +74,22 @@ jobs:
               ast.parse(open(p,encoding='utf-8').read(),filename=p)
           print('research preflight: PASS')
           PY
-
-      - name: Run V12 autonomous research
+      - name: Run V12 autonomous research with bounded retries
         run: |
           set -euo pipefail
           . .venv-research/bin/activate
-          python v12_auto_research.py
-
+          for attempt in 1 2 3; do
+            if python v12_auto_research.py; then exit 0; fi
+            echo "[RESEARCH] attempt ${attempt}/3 failed"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 15)); fi
+          done
+          exit 1
       - name: Generate OpenAI research advisory
         run: |
           set -euo pipefail
           . .venv-research/bin/activate
           python openai_research_advisor.py
           python -m json.tool research_ai_advice.json >/dev/null
-
       - name: Validate research outputs
         run: |
           set -euo pipefail
@@ -119,8 +116,7 @@ jobs:
           assert a.get('source_policy') == 'prior_rows_only'
           print('candidate OOS + fail-closed promotion gate + provenance + OpenAI advisory: PASS')
           PY
-
-      - name: Save research state
+      - name: Save research state with conflict recovery
         if: always()
         run: |
           set -euo pipefail
@@ -129,11 +125,39 @@ jobs:
           git add research_state.json research_history.json research_manifest.json research_ai_advice.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
           if git diff --cached --quiet; then
             echo '[COMMIT] no research-state changes.'
-          else
-            git commit -m 'Update soccer V12 autonomous research state'
-            git push
+            exit 0
           fi
-
+          git commit -m 'Update soccer V12 autonomous research state'
+          for attempt in 1 2 3 4 5; do
+            if git fetch origin main && git rebase origin/main && git push origin HEAD:main; then exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+          exit 1
+      - name: Dispatch next production backtest after verified research without GitHub CLI
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
+          url=f'https://api.github.com/repos/{repo}/actions/workflows/soccer-backtest.yml/dispatches'
+          data=json.dumps({'ref':'main'}).encode()
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'}
+          for attempt in range(1,6):
+              req=urllib.request.Request(url,data=data,headers=headers,method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=30) as r:
+                      if r.status in (201,204): print(f'[CHAIN] next production backtest dispatched on attempt {attempt}'); raise SystemExit(0)
+                      raise RuntimeError(f'HTTP {r.status}')
+              except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,RuntimeError) as e:
+                  print(f'[CHAIN] dispatch attempt {attempt}/5 failed: {e}')
+                  if attempt < 5: time.sleep(attempt*5)
+          raise SystemExit(1)
+          PY
       - name: Upload research artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -153,20 +177,3 @@ jobs:
             research_ai_advice.json
           if-no-files-found: ignore
           retention-days: 30
-
-      - name: Dispatch next production backtest after verified research
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if gh workflow run soccer-backtest.yml --repo "${GITHUB_REPOSITORY}"; then
-              echo "[CHAIN] next production backtest dispatched on attempt ${attempt}"
-              exit 0
-            fi
-            echo "[CHAIN] production dispatch attempt ${attempt} failed; retrying"
-            sleep $((attempt * 10))
-          done
-          exit 1
