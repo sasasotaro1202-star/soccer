@@ -1,6 +1,8 @@
 name: Soccer Autonomous Self-Heal
 
 on:
+  push:
+    branches: [main]
   workflow_run:
     workflows:
       - Soccer Backtest V12 - Hardened Production
@@ -15,7 +17,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: soccer-self-heal
+  group: soccer-self-heal-v2
   cancel-in-progress: false
 
 jobs:
