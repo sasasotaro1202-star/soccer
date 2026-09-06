@@ -15,27 +15,23 @@ permissions:
   contents: write
 
 concurrency:
-  group: soccer-self-heal-v2
+  group: soccer-self-heal-v3
   cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
 
 jobs:
   heal:
-    runs-on: [self-hosted, macOS, X64]
+    name: Hosted autonomous self-heal watchdog
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
+      - name: Checkout diagnostics state
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Verify self-heal runner
-        run: |
-          set -euo pipefail
-          test "$(uname -s)" = "Darwin"
-          test "$(uname -m)" = "x86_64"
-          command -v python3
-          command -v curl
-          echo '[SELF-HEAL] self-hosted Intel Mac runner OK; using Python stdlib + GitHub REST API.'
-      - name: Diagnose, retry and close any broken chain
+      - name: Diagnose, cancel stuck runs, retry and close the chain
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
@@ -43,41 +39,71 @@ jobs:
           EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           EVENT_WORKFLOW: ${{ github.event.workflow_run.name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p self_heal
           python3 - <<'PY'
-          import json, os, ssl, urllib.request, time
+          import json, os, time, urllib.request, urllib.error
+          from datetime import datetime, timezone
           from pathlib import Path
-          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']; api=f'https://api.github.com/repos/{repo}'
-          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}; ctx=ssl.create_default_context()
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']; api=os.environ.get('GITHUB_API_URL','https://api.github.com').rstrip('/')
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'Soccer-Autonomous-Self-Heal','Content-Type':'application/json'}
+          STALE_MINUTES={'Soccer Backtest V12 - Hardened Production':105,'Soccer V12 Autonomous Research AI':180}
           def req(path, method='GET', data=None):
               r=urllib.request.Request(api+path, method=method, headers=headers)
-              if data is not None: r.data=json.dumps(data).encode(); r.add_header('Content-Type','application/json')
-              with urllib.request.urlopen(r, context=ctx, timeout=30) as x:
-                  raw=x.read(); return json.loads(raw) if raw else {}
-          now=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()); event_id=os.environ.get('EVENT_RUN_ID',''); event_conclusion=os.environ.get('EVENT_CONCLUSION',''); event_attempt=int(os.environ.get('EVENT_ATTEMPT','1') or 1); event_workflow=os.environ.get('EVENT_WORKFLOW','scheduled')
+              if data is not None: r.data=json.dumps(data).encode('utf-8')
+              try:
+                  with urllib.request.urlopen(r, timeout=30) as x:
+                      raw=x.read(); return json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:
+                  detail=e.read().decode('utf-8',errors='replace')
+                  raise RuntimeError(f'GitHub API {method} {path}: HTTP {e.code}: {detail}')
+          now_dt=datetime.now(timezone.utc); now=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+          event_id=os.environ.get('EVENT_RUN_ID',''); event_conclusion=os.environ.get('EVENT_CONCLUSION',''); event_attempt=int(os.environ.get('EVENT_ATTEMPT','1') or 1); event_workflow=os.environ.get('EVENT_WORKFLOW','scheduled')
           print(f'[HEAL] {now} event={event_workflow} run={event_id or "none"} conclusion={event_conclusion or "none"} attempt={event_attempt}')
-          if event_id and event_conclusion == 'failure' and event_attempt < 3:
-              try: req(f'/actions/runs/{event_id}/rerun-failed-jobs','POST'); print(f'[HEAL] requested rerun-failed-jobs for {event_id}')
-              except Exception as e: print(f'[HEAL] rerun request failed: {e}')
-          runs=req('/actions/runs?per_page=50')['workflow_runs']
-          active=[r for r in runs if r['name'] in ('Soccer Backtest V12 - Hardened Production','Soccer V12 Autonomous Research AI') and r['status'] in ('in_progress','queued','waiting','requested')]
-          prod=max([r for r in runs if r['name']=='Soccer Backtest V12 - Hardened Production' and r['status']=='completed'],key=lambda r:r['created_at'],default=None)
-          research=max([r for r in runs if r['name']=='Soccer V12 Autonomous Research AI' and r['status']=='completed'],key=lambda r:r['created_at'],default=None)
-          action='none'; dispatch_status='not-needed'; dispatch_workflow='none'
-          if active: action='none-active'; print('[HEAL] autonomous stage already active; no dispatch')
+          runs=req('/repos/'+repo+'/actions/runs?per_page=100').get('workflow_runs',[])
+          names=('Soccer Backtest V12 - Hardened Production','Soccer V12 Autonomous Research AI')
+          active=[r for r in runs if r.get('name') in names and r.get('status') in ('in_progress','queued','waiting','requested','pending')]
+          def age(r):
+              v=r.get('created_at') or r.get('updated_at');
+              return (now_dt-datetime.fromisoformat(v.replace('Z','+00:00'))).total_seconds()/60.0 if v else 0.0
+          stuck=[]
+          for r in active:
+              limit=STALE_MINUTES[r['name']]
+              if age(r)>limit:
+                  print(f'[HEAL] STUCK run={r["id"]} workflow={r["name"]} status={r["status"]} age_min={age(r):.1f} limit={limit}; cancelling')
+                  req(f'/repos/{repo}/actions/runs/{r["id"]}/cancel','POST')
+                  stuck.append(r['id'])
+          if stuck:
+              active=[r for r in active if r['id'] not in stuck]
+              action='cancel-stuck'
           else:
-              def dispatch(workflow_file):
-                  global dispatch_status, dispatch_workflow
-                  try: req(f'/actions/workflows/{workflow_file}/dispatches','POST',{'ref':'main'}); dispatch_status='success'; dispatch_workflow=workflow_file; print(f'[HEAL] dispatched {workflow_file}')
-                  except Exception as e: dispatch_status='failed'; dispatch_workflow=workflow_file; print(f'[HEAL] dispatch failed for {workflow_file}: {e}')
-              if prod and prod.get('conclusion') in ('failure','cancelled','timed_out') and (event_id != str(prod['id']) or event_attempt >= 3): action='dispatch-production-recovery'; dispatch('soccer-backtest.yml')
-              elif prod and prod.get('conclusion')=='success' and (not research or research['created_at'] < prod['created_at']): action='dispatch-research'; dispatch('soccer-research-ai.yml')
-              elif research and research.get('conclusion')=='success' and (not prod or prod['created_at'] < research['created_at']): action='dispatch-production'; dispatch('soccer-backtest.yml')
-          latest={'version':'soccer-self-heal-v9','time':now,'action':action,'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,'production_active':sum(r['name']=='Soccer Backtest V12 - Hardened Production' for r in active),'research_active':sum(r['name']=='Soccer V12 Autonomous Research AI' for r in active),'latest_production_run':prod['id'] if prod else None,'latest_production_conclusion':prod['conclusion'] if prod else None,'latest_research_run':research['id'] if research else None,'latest_research_conclusion':research['conclusion'] if research else None}
-          Path('self_heal/latest.json').write_text(json.dumps(latest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); Path('self_heal/recent_runs.json').write_text(json.dumps(runs,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              action='none'
+          if event_id and event_conclusion == 'failure' and event_attempt < 3:
+              try:
+                  req(f'/repos/{repo}/actions/runs/{event_id}/rerun-failed-jobs','POST'); print(f'[HEAL] requested rerun-failed-jobs for {event_id}'); action='rerun-failed-jobs'
+              except Exception as e: print(f'[HEAL] rerun request failed: {e}')
+          prod=max([r for r in runs if r.get('name')==names[0] and r.get('status')=='completed'],key=lambda r:r.get('created_at',''),default=None)
+          research=max([r for r in runs if r.get('name')==names[1] and r.get('status')=='completed'],key=lambda r:r.get('created_at',''),default=None)
+          dispatch_status='not-needed'; dispatch_workflow='none'
+          def dispatch(workflow_file):
+              nonlocal_vars=None
+              global dispatch_status, dispatch_workflow
+              try:
+                  req(f'/repos/{repo}/actions/workflows/{workflow_file}/dispatches','POST',{'ref':'main'}); dispatch_status='success'; dispatch_workflow=workflow_file; print(f'[HEAL] dispatched {workflow_file}')
+              except Exception as e: dispatch_status='failed'; dispatch_workflow=workflow_file; print(f'[HEAL] dispatch failed for {workflow_file}: {e}')
+          if not active and not stuck:
+              if prod and prod.get('conclusion') in ('failure','cancelled','timed_out') and (event_id != str(prod['id']) or event_attempt >= 3):
+                  action='dispatch-production-recovery'; dispatch('soccer-backtest.yml')
+              elif prod and prod.get('conclusion')=='success' and (not research or research.get('created_at','') < prod.get('created_at','')):
+                  action='dispatch-research'; dispatch('soccer-research-ai.yml')
+              elif research and research.get('conclusion')=='success' and (not prod or prod.get('created_at','') < research.get('created_at','')):
+                  action='dispatch-production'; dispatch('soccer-backtest.yml')
+          latest={'version':'soccer-self-heal-v10','time':now,'action':action,'dispatch_status':dispatch_status,'dispatch_workflow':dispatch_workflow,'active_runs':[r['id'] for r in active],'cancelled_stuck_runs':stuck,'latest_production_run':prod['id'] if prod else None,'latest_production_conclusion':prod['conclusion'] if prod else None,'latest_research_run':research['id'] if research else None,'latest_research_conclusion':research['conclusion'] if research else None}
+          Path('self_heal/latest.json').write_text(json.dumps(latest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          Path('self_heal/recent_runs.json').write_text(json.dumps(runs,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           PY
       - name: Persist self-heal diagnostics
         if: always()
