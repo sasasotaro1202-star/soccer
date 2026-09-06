@@ -26,6 +26,9 @@ else:
     (ROOT/"backtest_checkpoint_v9.pkl.gz").unlink(missing_ok=True)
 for p in (ROOT/"BACKTEST_COMPLETE_V9",ROOT/"BACKTEST_COMPLETE_V12",ROOT/"backtest_results_v9.csv",ROOT/"backtest_results_v12.csv"): p.unlink(missing_ok=True)
 
+# Match the canonical production runtime/source settings. Workers do not
+# collect new data; they consume only the frozen cache artifact.
+os.environ.update({"MAX_RUNTIME_SECONDS":"5100","ENABLE_SOFASCORE":"1","SOFASCORE_DETAILS":"0","ENABLE_UNDERSTAT":"1","INCLUDE_CLUB_FRIENDLIES":"1","FRIENDLY_MIN_YEAR":"2010","FRIENDLY_MAX_PAGES":"250"})
 import backtest
 backtest.CHECKPOINT=ROOT/"backtest_checkpoint_v9.pkl.gz"
 original_save=backtest.save_state
@@ -47,8 +50,6 @@ with gzip.open(backtest.CHECKPOINT,"rb") as f: ck=pickle.load(f)
 rows=pd.DataFrame(ck.get("results",[]))
 if rows.empty: raise SystemExit("worker produced no V9 rows")
 if len(rows)<end: raise SystemExit(f"worker prefix shorter than shard end: rows={len(rows)} end={end}")
-# V9 must emit exactly one result per processed canonical input row. This
-# invariant makes cursor boundaries map 1:1 to output rows.
 if W==3 and len(rows)!=end: raise SystemExit(f"final worker cardinality mismatch rows={len(rows)} end={end}")
 rows.to_csv(ROOT/"backtest_results_v9.csv",index=False,encoding="utf-8-sig")
 # Run only the V12 meta-layer; calling v12_runner.main() would invoke V9 again.
