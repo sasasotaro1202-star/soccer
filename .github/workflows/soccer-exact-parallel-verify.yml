@@ -2,6 +2,9 @@ name: Soccer Exact Parallel Verification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["exact_parallel/**", ".github/workflows/soccer-exact-parallel-verify.yml"]
 
 permissions:
   contents: read
