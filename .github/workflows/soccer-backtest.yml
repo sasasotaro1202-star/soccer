@@ -31,26 +31,39 @@ concurrency:
   group: soccer-backtest-v12-production
   cancel-in-progress: false
 
+env:
+  PYTHONUNBUFFERED: "1"
+
 jobs:
   backtest:
-    runs-on: [self-hosted, macOS]
+    runs-on: self-hosted
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
+      - name: Setup persistent Python environment
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          VENV="$HOME/.soccer-production-venv"
+          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
+          if [ ! -x "$VENV/bin/python" ] || [ ! -f "$VENV/.requirements.sha256" ] || [ "$(cat "$VENV/.requirements.sha256")" != "$REQ_HASH" ]; then
+            echo "[PYTHON] Creating/updating persistent environment: $VENV"
+            rm -rf "$VENV"
+            python3 -m venv "$VENV"
+            "$VENV/bin/python" -m pip install --upgrade pip
+            "$VENV/bin/python" -m pip install -r requirements.txt
+            printf '%s\n' "$REQ_HASH" > "$VENV/.requirements.sha256"
+          else
+            echo "[PYTHON] Reusing persistent environment: $VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          "$VENV/bin/python" --version
+          "$VENV/bin/python" - <<'PY'
+          import pandas, numpy, sklearn, requests
+          print('[PYTHON] core dependencies OK')
+          PY
       - name: Apply production hardening patches
         run: |
           set -euo pipefail
