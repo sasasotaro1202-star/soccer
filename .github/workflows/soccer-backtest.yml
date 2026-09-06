@@ -9,14 +9,17 @@ on:
 permissions:
   contents: write
   actions: write
+# Baseball owns the single self-hosted Mac runner. Soccer is deliberately moved
+# to a GitHub-hosted runner so the two production backtests cannot block each other.
+# The backtest code, chronological OOS logic, inputs, safeguards and state gate are unchanged.
 concurrency:
-  group: soccer-backtest-v12-production-v9
+  group: soccer-backtest-v12-production-v10
   cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
 jobs:
   backtest:
-    runs-on: [self-hosted, macOS, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +29,7 @@ jobs:
           set -euo pipefail
           VENV="$HOME/.soccer-v12-venv"
           python3 -m venv "$VENV" 2>/dev/null || true
-          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
+          REQ_HASH="$(sha256sum requirements.txt | awk '{print $1}')"
           MARKER="$VENV/.requirements-$REQ_HASH"
           if [ ! -f "$MARKER" ]; then
             "$VENV/bin/python" -m pip install --upgrade pip
