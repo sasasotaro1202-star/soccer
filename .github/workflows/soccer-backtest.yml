@@ -16,7 +16,7 @@ env:
   PYTHONUNBUFFERED: "1"
 jobs:
   backtest:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           VENV="$RUNNER_TEMP/soccer-v12-venv"
           python3 -m venv "$VENV"
-          REQ_HASH="$(sha256sum requirements.txt | awk '{print $1}')"
+          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
           echo "[DEPS] requirements_sha256=$REQ_HASH"
           "$VENV/bin/python" -m pip install --upgrade pip
           "$VENV/bin/python" -m pip install -r requirements.txt
@@ -40,8 +40,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          p=Path('backtest.py'); s=p.read_text(encoding='utf-8')
-          marker='SOCCER_PRODUCTION_HARDENING_V2'
+          p=Path('backtest.py'); s=p.read_text(encoding='utf-8'); marker='SOCCER_PRODUCTION_HARDENING_V2'
           if marker not in s:
               anchor='''    aliases={\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
               replacement='''    aliases={\n        "man united":"manchester united","man utd":"manchester united","manchester united":"manchester united","manchester united fc":"manchester united",\n        "man city":"manchester city","manchester city":"manchester city","manchester city fc":"manchester city",\n        "tottenham":"tottenham hotspur","tottenham hotspur":"tottenham hotspur","spurs":"tottenham hotspur",\n        "newcastle":"newcastle united","west ham":"west ham united","wolves":"wolverhampton wanderers","leicester":"leicester city","leeds":"leeds united",\n        "brighton":"brighton hove albion","sheffield utd":"sheffield united","norwich":"norwich city","qpr":"queens park rangers",\n        "west brom":"west bromwich albion","huddersfield":"huddersfield town",\n        "fc bayern munchen":"bayern","bayern munich":"bayern","bayern munchen":"bayern",'''
@@ -52,13 +51,10 @@ jobs:
               if old in s: s=s.replace(old,new,1)
               elif 'ka in kb' in s: s=s.replace('    return ka==kb or ka in kb or kb in ka','    return bool(ka) and bool(kb) and ka == kb',1)
               else: raise SystemExit('[PATCH] same_team not found')
-              s += '\n# ' + marker + '\n'
-              p.write_text(s,encoding='utf-8')
-          r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8')
-          safeguard='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
+              s += '\n# ' + marker + '\n'; p.write_text(s,encoding='utf-8')
+          r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8'); safeguard='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
           if safeguard not in rs:
-              rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+safeguard, 1)
-              r.write_text(rs,encoding='utf-8')
+              rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+safeguard, 1); r.write_text(rs,encoding='utf-8')
           if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] prior-row safeguard missing')
           PY
           python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
@@ -75,14 +71,12 @@ jobs:
           import requests
           repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
           headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
-          api=f'https://api.github.com/repos/{repo}'
-          session=requests.Session(); session.headers.update(headers); artifact=None
+          api=f'https://api.github.com/repos/{repo}'; session=requests.Session(); session.headers.update(headers); artifact=None
           for name in ('soccer-backtest-state-v12','soccer-backtest-state-v9'):
               r=session.get(f'{api}/actions/artifacts',params={'name':name,'per_page':100},timeout=60); r.raise_for_status()
               items=[a for a in r.json().get('artifacts',[]) if not a.get('expired',False)]
               if items: artifact=max(items,key=lambda a:a.get('created_at','')); break
-          if not artifact:
-              print('[STATE] no prior artifact'); raise SystemExit(0)
+          if not artifact: print('[STATE] no prior artifact'); raise SystemExit(0)
           print(f"[STATE] restoring artifact id={artifact['id']} name={artifact['name']} created={artifact.get('created_at')}")
           r=session.get(artifact['archive_download_url'],timeout=120); r.raise_for_status()
           with tempfile.TemporaryDirectory() as td:
@@ -118,8 +112,7 @@ jobs:
           test -s overall_summary_v12.csv
           python - <<'PY'
           import numpy as np, pandas as pd
-          d=pd.read_csv('backtest_results_v12.csv',low_memory=False)
-          need=['HomeProbV12','DrawProbV12','AwayProbV12','PredictedV12','Actual']
+          d=pd.read_csv('backtest_results_v12.csv',low_memory=False); need=['HomeProbV12','DrawProbV12','AwayProbV12','PredictedV12','Actual']
           miss=[c for c in need if c not in d.columns]
           if miss: raise SystemExit(f'missing columns: {miss}')
           p=d[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
@@ -154,8 +147,7 @@ jobs:
         if: success()
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backtest_checkpoint_v9.pkl.gz cache/
           if git diff --cached --quiet; then echo '[COMMIT] no verified state changes'; exit 0; fi
           git commit -m 'Persist verified Soccer V12 state'
