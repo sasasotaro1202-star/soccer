@@ -16,7 +16,7 @@ env:
   PYTHONUNBUFFERED: "1"
 jobs:
   backtest:
-    runs-on: [self-hosted, macOS, X64]
+    runs-on: [self-hosted, macOS, X64, soccer]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -151,9 +151,10 @@ jobs:
           git add backtest_checkpoint_v9.pkl.gz cache/
           if git diff --cached --quiet; then echo '[COMMIT] no verified state changes'; exit 0; fi
           git commit -m 'Persist verified Soccer V12 state'
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             git fetch origin main
             if git rebase origin/main && git push origin HEAD:main; then echo "[PERSIST] verified state push succeeded on attempt $attempt"; exit 0; fi
-            git rebase --abort 2>/dev/null || true; sleep 3
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
           done
-          echo '[PERSIST] verified state push failed after 3 attempts'; exit 1
+          echo '[PERSIST] verified state push failed after 5 attempts'; exit 1
