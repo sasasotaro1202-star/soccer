@@ -1,11 +1,10 @@
 name: Soccer Backtest V12 - Hardened Production
 on:
   workflow_dispatch:
+  # Production is schedule-driven so checkpoint/diagnostic commits cannot
+  # accidentally create overlapping production runs.
   schedule:
     - cron: '17 0,6,12,18 * * *'
-  push:
-    branches: [main]
-    paths-ignore: ["*_v9.csv", "*_v12.csv", "backtest_checkpoint_v9.pkl.gz", "BACKTEST_COMPLETE_V9", "BACKTEST_COMPLETE_V12", "cache/**", "research_state.json", "research_history.json", "evaluation.json", "failure_analysis.json", "condition_analysis_v12.json", "candidate_models.json", "candidate_evaluations.json", "model_comparison_v12.json", "model_registry.json", "research_manifest.json", "self_heal/**", "exact_parallel/**", ".github/workflows/soccer-exact-parallel-verify.yml"]
 permissions:
   contents: write
   actions: write
