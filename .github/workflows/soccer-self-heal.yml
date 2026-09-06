@@ -20,13 +20,21 @@ concurrency:
 
 jobs:
   heal:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Verify self-heal runner
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "x86_64"
+          command -v gh
+          command -v jq
 
       - name: Diagnose, retry and close any broken chain
         env:
@@ -43,18 +51,16 @@ jobs:
           now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           echo "[HEAL] ${now} event=${EVENT_WORKFLOW:-scheduled} run=${EVENT_RUN_ID:-none} conclusion=${EVENT_CONCLUSION:-none} attempt=${EVENT_ATTEMPT:-none}"
 
-          # Failed autonomous runs are retried at most twice (attempts 1 -> 2 -> 3).
           if [ -n "${EVENT_RUN_ID:-}" ] && [ "${EVENT_CONCLUSION:-}" = "failure" ]; then
             attempt="${EVENT_ATTEMPT:-1}"
             if [ "${attempt}" -lt 3 ]; then
-              echo "[HEAL] retrying failed run ${EVENT_RUN_ID}, attempt ${attempt}"
+              echo "[HEAL] retrying failed run ${EVENT_RUN_ID}, attempt=${attempt}"
               gh run rerun "${EVENT_RUN_ID}" --failed --repo "${repo}" || echo '[HEAL] rerun request failed; watchdog will retry later'
             else
               echo '[HEAL] retry budget exhausted for this run'
             fi
           fi
 
-          # Never start another copy of an autonomous stage while one is active.
           active_json=$(gh run list --repo "${repo}" --limit 50 --json name,status)
           prod_active=$(echo "${active_json}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | length')
           research_active=$(echo "${active_json}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | length')
@@ -65,10 +71,8 @@ jobs:
             exit 0
           fi
 
-          # Read the latest completed Production and Research runs independently.
           runs=$(gh run list --repo "${repo}" --limit 50 --json databaseId,name,status,conclusion,createdAt)
           printf '%s\n' "${runs}" > self_heal/recent_runs.json
-
           prod=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") | select(.status == "completed")] | sort_by(.createdAt) | last // empty')
           research=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") | select(.status == "completed")] | sort_by(.createdAt) | last // empty')
 
@@ -100,7 +104,6 @@ jobs:
             return 1
           }
 
-          # Repair only a genuinely missing handoff, not merely an older stage.
           if [ "${prod_conclusion}" = "success" ] && { [ -z "${research_time}" ] || [[ "${research_time}" < "${prod_time}" ]]; }; then
             action='dispatch-research'
             dispatch_with_retry soccer-research-ai.yml || true
