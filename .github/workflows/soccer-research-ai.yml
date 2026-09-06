@@ -1,14 +1,11 @@
 name: Soccer V12 Autonomous Research AI
 
 on:
-  workflow_run:
-    workflows:
-      - Soccer Backtest V12 - Hardened Production
-    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: soccer-v12-research
@@ -17,20 +14,17 @@ concurrency:
 jobs:
   research:
     name: V12 autonomous evaluation and research on Mac
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-    runs-on: [self-hosted, macOS, X64]
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 60
     env:
       MAX_RUNTIME_SECONDS: '3300'
       CANDIDATE_RETRAIN_EVERY: '150'
       CANDIDATE_MIN_TRAIN: '260'
       PYTHONUNBUFFERED: '1'
-      RESEARCH_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
-      RESEARCH_TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
       RESEARCH_RUNNER: macOS-self-hosted
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
@@ -123,7 +117,7 @@ jobs:
 
       - name: Upload research artifacts
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: soccer-v12-research-${{ github.run_id }}
           path: |
@@ -139,3 +133,20 @@ jobs:
             research_manifest.json
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Dispatch next production backtest after verified research
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if gh workflow run soccer-backtest.yml --repo "${GITHUB_REPOSITORY}"; then
+              echo "[CHAIN] next production backtest dispatched on attempt ${attempt}"
+              exit 0
+            fi
+            echo "[CHAIN] production dispatch attempt ${attempt} failed; retrying"
+            sleep $((attempt * 10))
+          done
+          exit 1
