@@ -1,52 +1,63 @@
 #!/usr/bin/env python3
-"""Exact-parallel verification worker.
+"""True exact Soccer shard worker.
 
-This deliberately replays the canonical V12 engine from the same frozen input
-snapshot, then emits only one deterministic shard of the resulting rows.  It
-never changes model/OOS logic and never writes production state.
+Each worker starts from a canonical V9 state snapshot produced by one
+sequential baseline replay. It then executes only its assigned chronological
+interval. V12 is rebuilt over the resulting prefix+shard and only the shard is
+emitted. No worker writes production state.
 """
 from __future__ import annotations
-import hashlib, json, os, shutil, subprocess, sys
+import gzip,json,os,pickle,shutil,sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 ROOT=Path(__file__).resolve().parents[1]
-WORKER=int(os.environ["WORKER_ID"])
-COUNT=int(os.environ.get("WORKER_COUNT","4"))
+W=int(os.environ["WORKER_ID"]); N=int(os.environ.get("WORKER_COUNT","4"))
 OUT=ROOT/"exact_parallel"/"out"; OUT.mkdir(parents=True,exist_ok=True)
+BASE=ROOT/"exact_parallel"/"baseline"
+manifest=json.loads((BASE/"boundaries.json").read_text(encoding="utf-8"))
+bounds=[0]+[int(x["cursor"]) for x in manifest["boundaries"]]+[int(manifest["input_rows"])]
+if len(bounds)!=5: raise SystemExit("invalid boundary manifest")
+start,end=bounds[W],bounds[W+1]
+if W>0:
+    shutil.copy2(BASE/f"checkpoint_boundary_{W}.pkl.gz",ROOT/"backtest_checkpoint_v9.pkl.gz")
+else:
+    (ROOT/"backtest_checkpoint_v9.pkl.gz").unlink(missing_ok=True)
+for p in (ROOT/"BACKTEST_COMPLETE_V9",ROOT/"BACKTEST_COMPLETE_V12",ROOT/"backtest_results_v9.csv",ROOT/"backtest_results_v12.csv"): p.unlink(missing_ok=True)
 
-# A worker must start from a clean chronological state. Checkpoints/complete
-# markers would otherwise turn the replay into a resume and invalidate the
-# equivalence test.
-for p in (ROOT/"backtest_checkpoint_v9.pkl.gz", ROOT/"BACKTEST_COMPLETE_V9", ROOT/"BACKTEST_COMPLETE_V12"):
-    p.unlink(missing_ok=True)
+import backtest
+backtest.CHECKPOINT=ROOT/"backtest_checkpoint_v9.pkl.gz"
+original_save=backtest.save_state
+class ShardStop(Exception): pass
 
-# Ensure all workers execute the exact checked-out production code.
-cmd=[sys.executable,"v12_runner.py"]
-env=os.environ.copy()
-env.update({"MAX_RUNTIME_SECONDS":"5100","ENABLE_SOFASCORE":"1","SOFASCORE_DETAILS":"0","ENABLE_UNDERSTAT":"1","INCLUDE_CLUB_FRIENDLIES":"1","FRIENDLY_MIN_YEAR":"2010","FRIENDLY_MAX_PAGES":"250"})
-subprocess.run(cmd,cwd=ROOT,env=env,check=True)
+def save_and_stop(*args,**kwargs):
+    original_save(*args,**kwargs)
+    cursor=int(args[14] if len(args)>14 else kwargs.get("cursor",0))
+    if W<3 and cursor>=end:
+        raise ShardStop(f"worker={W} reached end cursor={cursor}")
+backtest.save_state=save_and_stop
+try:
+    backtest.main()
+except ShardStop as e:
+    print("[SHARD STOP]",e)
 
-src=ROOT/"backtest_results_v12.csv"
-df=pd.read_csv(src,low_memory=False)
-if df.empty: raise SystemExit("empty V12 output")
-# Stable row identity is the canonical output order. np.array_split gives
-# deterministic contiguous shards without changing any prediction.
-idx=np.array_split(np.arange(len(df)),COUNT)[WORKER]
-shard=df.iloc[idx].copy()
-shard.insert(0,"__parallel_row",idx.astype(int))
-shard.to_csv(OUT/f"soccer_worker_{WORKER}.csv",index=False)
-
-# Hash the exact output and the frozen cache manifest so the aggregator can
-# prove all workers used the same inputs/code.
-def tree_hash(root: Path)->str:
-    h=hashlib.sha256()
-    if not root.exists(): return h.hexdigest()
-    for p in sorted(x for x in root.rglob('*') if x.is_file()):
-        h.update(str(p.relative_to(root)).encode()); h.update(b"\0")
-        h.update(hashlib.sha256(p.read_bytes()).digest())
-    return h.hexdigest()
-manifest={"worker":WORKER,"count":COUNT,"rows_total":len(df),"rows_shard":len(shard),"code_sha":os.environ.get("GITHUB_SHA",""),"cache_sha":tree_hash(ROOT/"cache"),"output_sha":hashlib.sha256(src.read_bytes()).hexdigest()}
-(OUT/f"soccer_worker_{WORKER}.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
-print(json.dumps(manifest,ensure_ascii=False))
+if not backtest.CHECKPOINT.exists(): raise SystemExit("worker checkpoint missing")
+with gzip.open(backtest.CHECKPOINT,"rb") as f: ck=pickle.load(f)
+rows=pd.DataFrame(ck.get("results",[]))
+if rows.empty: raise SystemExit("worker produced no V9 rows")
+if len(rows)<end: raise SystemExit(f"worker prefix shorter than shard end: rows={len(rows)} end={end}")
+# V9 must emit exactly one result per processed canonical input row. This
+# invariant makes cursor boundaries map 1:1 to output rows.
+if W==3 and len(rows)!=end: raise SystemExit(f"final worker cardinality mismatch rows={len(rows)} end={end}")
+rows.to_csv(ROOT/"backtest_results_v9.csv",index=False,encoding="utf-8-sig")
+# Run only the V12 meta-layer; calling v12_runner.main() would invoke V9 again.
+import v12_runner
+v12_runner.build_v12()
+full=pd.read_csv(ROOT/"backtest_results_v12.csv",low_memory=False)
+if len(full)<end: raise SystemExit(f"V12 output shorter than shard end: {len(full)}")
+shard=full.iloc[start:end].copy(); shard.insert(0,"__parallel_row",np.arange(start,end,dtype=int))
+shard.to_csv(OUT/f"soccer_worker_{W}.csv",index=False)
+meta={"worker":W,"count":N,"start":start,"end":end,"rows_total":len(full),"rows_shard":len(shard),"code_sha":os.environ.get("GITHUB_SHA","")}
+(OUT/f"soccer_worker_{W}.json").write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding="utf-8")
+print(json.dumps(meta,ensure_ascii=False))
