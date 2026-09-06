@@ -10,8 +10,8 @@ permissions:
   contents: write
   actions: write
 concurrency:
-  group: soccer-backtest-v12-production-v5
-  cancel-in-progress: true
+  group: soccer-backtest-v12-production-v6
+  cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
 jobs:
