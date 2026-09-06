@@ -43,44 +43,85 @@ jobs:
           now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           echo "[HEAL] ${now} event=${EVENT_WORKFLOW:-scheduled} run=${EVENT_RUN_ID:-none} conclusion=${EVENT_CONCLUSION:-none} attempt=${EVENT_ATTEMPT:-none}"
 
-          # First, retry a failed event at most twice after the original attempt.
-          if [ -n "${EVENT_RUN_ID}" ] && [ "${EVENT_CONCLUSION}" = "failure" ] && [ "${EVENT_ATTEMPT:-1}" -lt 3 ]; then
-            echo "[HEAL] retrying failed run ${EVENT_RUN_ID}"
-            gh run rerun "${EVENT_RUN_ID}" --failed --repo "${repo}" || true
+          # Failed autonomous runs are retried at most twice (attempts 1 -> 2 -> 3).
+          if [ -n "${EVENT_RUN_ID:-}" ] && [ "${EVENT_CONCLUSION:-}" = "failure" ]; then
+            attempt="${EVENT_ATTEMPT:-1}"
+            if [ "${attempt}" -lt 3 ]; then
+              echo "[HEAL] retrying failed run ${EVENT_RUN_ID}, attempt ${attempt}"
+              gh run rerun "${EVENT_RUN_ID}" --failed --repo "${repo}" || echo '[HEAL] rerun request failed; watchdog will retry later'
+            else
+              echo '[HEAL] retry budget exhausted for this run'
+            fi
           fi
 
-          # Never dispatch a second copy while either autonomous stage is running.
-          active=$(gh run list --repo "${repo}" --limit 30 --json name,status --jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | map(.name) | unique | join("|")')
-          echo "[HEAL] active=${active}"
-          if echo "|${active}|" | grep -q '|Soccer Backtest V12 - Hardened Production|Soccer V12 Autonomous Research AI|'; then
+          # Never start another copy of an autonomous stage while one is active.
+          active_json=$(gh run list --repo "${repo}" --limit 50 --json name,status)
+          prod_active=$(echo "${active_json}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | length')
+          research_active=$(echo "${active_json}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested")] | length')
+          echo "[HEAL] prod_active=${prod_active} research_active=${research_active}"
+          if [ "${prod_active}" -gt 0 ] || [ "${research_active}" -gt 0 ]; then
             echo '[HEAL] autonomous stage already active; no dispatch'
+            jq -n --arg now "${now}" --arg action "none-active" --argjson pa "${prod_active}" --argjson ra "${research_active}" '{version:"soccer-self-heal-v4",time:$now,action:$action,production_active:$pa,research_active:$ra}' > self_heal/latest.json
             exit 0
           fi
 
-          # Inspect recent completed runs. The explicit dispatches are the primary chain;
-          # this watchdog repairs a missed dispatch or an external/manual interruption.
-          runs=$(gh run list --repo "${repo}" --limit 30 --json databaseId,name,status,conclusion,createdAt,headSha,attempt)
-          echo "${runs}" > self_heal/recent_runs.json
+          # Read the latest completed Production and Research runs independently.
+          runs=$(gh run list --repo "${repo}" --limit 50 --json databaseId,name,status,conclusion,createdAt)
+          printf '%s\n' "${runs}" > self_heal/recent_runs.json
 
-          prod=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") and .status == "completed"] | sort_by(.createdAt) | last // empty')
-          research=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") and .status == "completed"] | sort_by(.createdAt) | last // empty')
+          prod=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer Backtest V12 - Hardened Production") | select(.status == "completed")] | sort_by(.createdAt) | last // empty')
+          research=$(echo "${runs}" | jq '[.[] | select(.name == "Soccer V12 Autonomous Research AI") | select(.status == "completed")] | sort_by(.createdAt) | last // empty')
 
           prod_id=$(echo "${prod}" | jq -r '.databaseId // empty')
           prod_conclusion=$(echo "${prod}" | jq -r '.conclusion // empty')
           prod_time=$(echo "${prod}" | jq -r '.createdAt // empty')
+          research_id=$(echo "${research}" | jq -r '.databaseId // empty')
           research_conclusion=$(echo "${research}" | jq -r '.conclusion // empty')
           research_time=$(echo "${research}" | jq -r '.createdAt // empty')
 
           action='none'
+          dispatch_status='not-needed'
+          dispatch_workflow='none'
+
+          dispatch_with_retry() {
+            workflow="$1"
+            for n in 1 2 3; do
+              if gh workflow run "${workflow}" --repo "${repo}"; then
+                echo "[HEAL] dispatched ${workflow} attempt=${n}"
+                dispatch_status='success'
+                dispatch_workflow="${workflow}"
+                return 0
+              fi
+              echo "[HEAL] dispatch ${workflow} attempt=${n} failed"
+              sleep $((n * 10))
+            done
+            dispatch_status='failed'
+            dispatch_workflow="${workflow}"
+            return 1
+          }
+
+          # Repair only a genuinely missing handoff, not merely an older stage.
           if [ "${prod_conclusion}" = "success" ] && { [ -z "${research_time}" ] || [[ "${research_time}" < "${prod_time}" ]]; }; then
             action='dispatch-research'
-            gh workflow run soccer-research-ai.yml --repo "${repo}"
+            dispatch_with_retry soccer-research-ai.yml || true
           elif [ "${research_conclusion}" = "success" ] && { [ -z "${prod_time}" ] || [[ "${prod_time}" < "${research_time}" ]]; }; then
             action='dispatch-production'
-            gh workflow run soccer-backtest.yml --repo "${repo}"
+            dispatch_with_retry soccer-backtest.yml || true
           fi
 
-          jq -n --arg now "${now}" --arg action "${action}" --arg prod "${prod_id}" --arg pc "${prod_conclusion}" --arg pt "${prod_time}" --arg rc "${research_conclusion}" --arg rt "${research_time}" '{version:"soccer-self-heal-v3",time:$now,action:$action,latest_production_run:$prod,latest_production_conclusion:$pc,latest_production_created:$pt,latest_research_conclusion:$rc,latest_research_created:$rt}' > self_heal/latest.json
+          jq -n \
+            --arg now "${now}" \
+            --arg action "${action}" \
+            --arg ds "${dispatch_status}" \
+            --arg dw "${dispatch_workflow}" \
+            --arg prod "${prod_id}" \
+            --arg pc "${prod_conclusion}" \
+            --arg pt "${prod_time}" \
+            --arg research "${research_id}" \
+            --arg rc "${research_conclusion}" \
+            --arg rt "${research_time}" \
+            '{version:"soccer-self-heal-v4",time:$now,action:$action,dispatch_status:$ds,dispatch_workflow:$dw,latest_production_run:$prod,latest_production_conclusion:$pc,latest_production_created:$pt,latest_research_run:$research,latest_research_conclusion:$rc,latest_research_created:$rt}' \
+            > self_heal/latest.json
 
       - name: Persist self-heal diagnostics
         if: always()
