@@ -28,7 +28,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: soccer-backtest-v12-production
+  group: soccer-backtest-v12-production-v3
   cancel-in-progress: false
 
 env:
