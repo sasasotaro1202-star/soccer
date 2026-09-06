@@ -28,7 +28,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: soccer-backtest-v12-production-v3
+  group: soccer-backtest-v12-production-v4
   cancel-in-progress: false
 
 env:
@@ -36,7 +36,7 @@ env:
 
 jobs:
   backtest:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 60
     steps:
       - name: Checkout
