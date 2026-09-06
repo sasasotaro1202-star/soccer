@@ -56,7 +56,8 @@ jobs:
               rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+safeguard, 1); r.write_text(rs,encoding='utf-8')
           if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] prior-row safeguard missing')
           PY
-          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
+          python understat_quality_runtime_patch.py
+          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py understat_quality_runtime_patch.py
           python tests/smoke_test.py
           python soccer_audit.py
       - name: Restore latest resumable state
@@ -104,7 +105,7 @@ jobs:
       - name: Verify outputs and prediction integrity
         run: |
           set -euo pipefail
-          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py
+          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py understat_quality_runtime_patch.py
           python soccer_audit.py
           test -s BACKTEST_COMPLETE_V12
           test -s backtest_results_v12.csv
