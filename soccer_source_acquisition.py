@@ -4,6 +4,7 @@ import json, os, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
+from curl_cffi import requests as curl_requests
 
 ROOT=Path('.')
 CACHE=ROOT/'cache'
@@ -18,6 +19,8 @@ UNDERSTAT_START_SEASON=max(2014, START_SEASON)
 END_SEASON=int(os.getenv('ACQ_END_SEASON',str(time.gmtime().tm_year)))
 S=requests.Session()
 S.headers.update({'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36','Accept':'application/json,text/plain,*/*','Accept-Language':'en-US,en;q=0.9','Referer':'https://www.sofascore.com/'})
+SOFA=curl_requests.Session(impersonate='chrome')
+SOFA.headers.update({'Accept':'application/json,text/plain,*/*','Accept-Language':'en-US,en;q=0.9','Referer':'https://www.sofascore.com/'})
 LEAGUES=['E0','D1','I1','SP1','F1','N1']
 UNDERSTAT=['epl','bundesliga','serie_a','la_liga','ligue_1','eredivisie']
 SOFA_BASES=['https://api.sofascore.com/api/v1','https://api.sofascore.app/api/v1']
@@ -26,14 +29,15 @@ def fresh(path: Path) -> bool:
     try: return path.exists() and path.stat().st_size > 500
     except Exception: return False
 
-def get(url, *, binary=False, understat=False, extra_headers=None):
+def get(url, *, binary=False, understat=False, extra_headers=None, sofascore=False):
     last=''; headers={}
     if understat:
         headers.update({'Referer':'https://understat.com/','Origin':'https://understat.com','X-Requested-With':'XMLHttpRequest','Accept':'application/json, text/plain, */*'})
     if extra_headers: headers.update(extra_headers)
+    session=SOFA if sofascore else S
     for attempt in range(RETRIES):
         try:
-            r=S.get(url,headers=headers,timeout=TIMEOUT)
+            r=session.get(url,headers=headers,timeout=TIMEOUT)
             if r.status_code==200: return r.content if binary else r.json()
             last=f'HTTP {r.status_code}'
             if r.status_code not in (408,425,429) and r.status_code<500: break
@@ -80,19 +84,18 @@ try:
     for base in SOFA_BASES:
         for day in probe_dates:
             day_s=day.isoformat(); found=False
-            for suffix in ('/inverse',''):
-                url=f'{base}/sport/football/scheduled-events/{day_s}{suffix}'
-                try:
-                    data=get(url,extra_headers={'Referer':'https://www.sofascore.com/','Origin':'https://www.sofascore.com'})
-                    events=data.get('events',[]) if isinstance(data,dict) else []
-                    attempts.append({'base':base,'date':day_s,'suffix':suffix,'http':'200','events':len(events)})
-                    for ev in events:
-                        eid=ev.get('id') if isinstance(ev,dict) else None
-                        if eid is not None and eid not in seen:
-                            seen.add(eid); all_events.append(ev)
-                    if events: found=True
-                except Exception as e:
-                    attempts.append({'base':base,'date':day_s,'suffix':suffix,'error':str(e)})
+            url=f'{base}/sport/football/scheduled-events/{day_s}'
+            try:
+                data=get(url,sofascore=True,extra_headers={'Referer':'https://www.sofascore.com/','Origin':'https://www.sofascore.com'})
+                events=data.get('events',[]) if isinstance(data,dict) else []
+                attempts.append({'base':base,'date':day_s,'http':'200','events':len(events)})
+                for ev in events:
+                    eid=ev.get('id') if isinstance(ev,dict) else None
+                    if eid is not None and eid not in seen:
+                        seen.add(eid); all_events.append(ev)
+                if events: found=True
+            except Exception as e:
+                attempts.append({'base':base,'date':day_s,'error':str(e)})
             if found and len(all_events)>=100: break
         if all_events: break
     out=CACHE/'sofascore'/'scheduled_events_latest.json'
