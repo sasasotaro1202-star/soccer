@@ -1,0 +1,47 @@
+name: Soccer Source Acquisition
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7 0,6,12,18 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: soccer-source-acquisition
+  cancel-in-progress: false
+env:
+  PYTHONUNBUFFERED: "1"
+jobs:
+  acquire:
+    runs-on: [self-hosted, macOS, X64, soccer]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Acquire and validate source data
+        env:
+          ACQ_TIMEOUT: "30"
+          ACQ_RETRIES: "6"
+        run: python soccer_source_acquisition.py
+      - name: Persist acquisition cache
+        if: success()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cache/ data_source_health.json
+          if git diff --cached --quiet; then echo '[ACQ] no cache changes'; exit 0; fi
+          git commit -m 'Acquire and persist Soccer source data'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+          exit 1
+      - name: Upload acquisition diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: soccer-source-acquisition-${{ github.run_id }}
+          path: data_source_health.json
+          if-no-files-found: ignore
+          retention-days: 30
