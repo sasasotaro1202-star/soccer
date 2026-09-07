@@ -14,6 +14,7 @@ env:
   PYTHONUNBUFFERED: "1"
 jobs:
   acquire:
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, 'Full-scope Soccer source acquisition')
     runs-on: [self-hosted, macOS, X64, soccer]
     timeout-minutes: 45
     steps:
