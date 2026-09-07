@@ -1,6 +1,8 @@
 name: Soccer Source Acquisition
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   schedule:
     - cron: '7 0,6,12,18 * * *'
 permissions:
@@ -76,7 +78,7 @@ jobs:
           exit 1
       - name: Upload acquisition diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75d5838078e36cf38b85af677262 # v4.6.2
         with:
           name: soccer-source-acquisition-${{ github.run_id }}
           path: |
