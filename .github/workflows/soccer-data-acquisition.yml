@@ -13,14 +13,16 @@ env:
 jobs:
   acquire:
     runs-on: [self-hosted, macOS, X64, soccer]
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Acquire and validate source data incrementally
+      - name: Acquire and validate full-scope source data
         env:
           ACQ_TIMEOUT: "20"
           ACQ_RETRIES: "4"
           ACQ_CACHE_TTL_SEC: "43200"
+          ACQ_START_SEASON: "2010"
+          ACQ_END_SEASON: "2025"
         run: python soccer_source_acquisition.py
       - name: Persist acquisition cache
         if: success()
@@ -30,7 +32,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add cache/ data_source_health.json
           if git diff --cached --quiet; then echo '[ACQ] no cache changes'; exit 0; fi
-          git commit -m 'Incremental Soccer source acquisition'
+          git commit -m 'Full-scope Soccer source acquisition'
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             if git rebase origin/main && git push origin HEAD:main; then exit 0; fi
