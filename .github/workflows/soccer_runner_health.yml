@@ -1,0 +1,42 @@
+name: Soccer Runner Health Monitor
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: soccer-runner-health
+  cancel-in-progress: true
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check registered self-hosted runner health
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request
+          repo=os.environ['REPO']; token=os.environ['GH_TOKEN']
+          req=urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/actions/runners?per_page=100',
+              headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
+          runners=data.get('runners',[])
+          expected='soccer'
+          matches=[r for r in runners if expected in (r.get('labels') and [x.get('name') for x in r['labels']] or [])]
+          report={'repository':repo,'expected_label':expected,'runners':[{"id":r.get('id'),"name":r.get('name'),"status":r.get('status'),"busy":r.get('busy'),"labels":[x.get('name') for x in r.get('labels',[])]} for r in matches]}
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          if not matches: raise SystemExit('RUNNER_HEALTH_FAIL: soccer runner label not registered')
+          if not any(r.get('status')=='online' for r in matches): raise SystemExit('RUNNER_HEALTH_FAIL: no online soccer runner')
+          print('RUNNER_HEALTH_PASS')
+          PY
