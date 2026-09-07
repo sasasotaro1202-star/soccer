@@ -14,7 +14,7 @@ concurrency:
 jobs:
   research:
     name: V12 autonomous evaluation and research on Mac
-    runs-on: [self-hosted, macOS, soccer]
+    runs-on: [self-hosted, macOS, X64, soccer]
     timeout-minutes: 60
     env:
       MAX_RUNTIME_SECONDS: '3300'
@@ -29,13 +29,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Verify Mac runner
+      - name: Mac runtime health gate
         run: |
           set -euo pipefail
           test "$(uname -s)" = "Darwin"
           test "$(uname -m)" = "x86_64"
+          echo '[HEALTH] Disk:'; df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          free_kb="$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')"
+          if [ "${free_kb:-0}" -lt 10485760 ]; then echo '[HEALTH] FAIL: less than 10 GiB free'; exit 20; fi
+          echo '[HEALTH] Memory:'; vm_stat | head -20 || true
+          echo '[HEALTH] Load:'; uptime
+          curl --fail --silent --show-error --location --max-time 20 https://api.github.com/rate_limit >/dev/null
+          echo '[HEALTH] GitHub HTTPS PASS'
+      - name: Verify Mac runner
+        run: |
+          set -euo pipefail
+          pgrep -af 'Runner.Listener' || true
           python3 --version
-          echo "Mac self-hosted research runner verified"
+          echo 'Mac self-hosted research runner verified'
       - name: Verify OpenAI secret is available
         run: |
           set -euo pipefail
@@ -55,11 +66,13 @@ jobs:
           test -s backtest_results_v12.csv
           test -s overall_summary_v12.csv
           python3 - <<'PY'
-          import pandas as pd
+          import numpy as np, pandas as pd
           p=pd.read_csv('backtest_results_v12.csv',low_memory=False)
           need=['HomeProbV12','DrawProbV12','AwayProbV12','PredictedV12','Actual']
           missing=[c for c in need if c not in p.columns]
           if missing: raise SystemExit(f'missing V12 columns: {missing}')
+          probs=p[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
+          if not np.all(np.isfinite(probs)) or not np.allclose(probs.sum(1),1.0,atol=1e-6): raise SystemExit('invalid V12 probability rows')
           if len(p) < 100: raise SystemExit(f'suspiciously small V12 output: {len(p)}')
           print(f'research input integrity PASS rows={len(p)}')
           PY
@@ -123,10 +136,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add research_state.json research_history.json research_manifest.json research_ai_advice.json evaluation.json failure_analysis.json condition_analysis_v12.json candidate_models.json candidate_evaluations.json model_comparison_v12.json model_registry.json
-          if git diff --cached --quiet; then
-            echo '[COMMIT] no research-state changes.'
-            exit 0
-          fi
+          if git diff --cached --quiet; then echo '[COMMIT] no research-state changes.'; exit 0; fi
           git commit -m 'Update soccer V12 autonomous research state'
           for attempt in 1 2 3 4 5; do
             if git fetch origin main && git rebase origin/main && git push origin HEAD:main; then exit 0; fi
