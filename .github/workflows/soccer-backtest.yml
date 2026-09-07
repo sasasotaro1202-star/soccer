@@ -1,13 +1,10 @@
 name: Soccer Backtest V12 - Hardened Production
 on:
   workflow_dispatch:
-  # Production is schedule-driven so checkpoint/diagnostic commits cannot
-  # accidentally create overlapping production runs.
   schedule:
     - cron: '17 0,6,12,18 * * *'
 permissions:
   contents: write
-  actions: write
 concurrency:
   group: soccer-backtest-v12-production-v12
   cancel-in-progress: false
@@ -29,17 +26,12 @@ jobs:
           echo '[HEALTH] Runner listener processes:'; pgrep -af 'Runner.Listener' || true
           echo '[HEALTH] Disk:'; df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
           free_kb="$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')"
-          if [ "${free_kb:-0}" -lt 10485760 ]; then
-            echo '[HEALTH] FAIL: less than 10 GiB free on workspace filesystem'
-            exit 20
-          fi
+          if [ "${free_kb:-0}" -lt 10485760 ]; then echo '[HEALTH] FAIL: less than 10 GiB free on workspace filesystem'; exit 20; fi
           echo '[HEALTH] Memory summary:'; vm_stat | head -20 || true
           echo '[HEALTH] CPU/load:'; uptime
           echo '[HEALTH] File descriptor limit:'; ulimit -n
-          echo '[HEALTH] GitHub connectivity:'
           curl --fail --silent --show-error --location --max-time 20 https://api.github.com/rate_limit >/dev/null
           echo '[HEALTH] GitHub HTTPS PASS'
-          echo '[HEALTH] SofaScore connectivity:'
           curl --fail --silent --show-error --location --max-time 20 https://www.sofascore.com >/dev/null
           echo '[HEALTH] SofaScore HTTPS PASS'
       - name: Setup Python
