@@ -12,16 +12,19 @@ CACHE=ROOT/'cache'
 TIMEOUT=int(os.getenv('ACQ_TIMEOUT','20'))
 RETRIES=int(os.getenv('ACQ_RETRIES','4'))
 CACHE_TTL_SEC=int(os.getenv('ACQ_CACHE_TTL_SEC','43200'))
+START_SEASON=int(os.getenv('ACQ_START_SEASON','2010'))
+END_SEASON=int(os.getenv('ACQ_END_SEASON',str(time.gmtime().tm_year)))
 S=requests.Session()
-S.headers.update({'User-Agent':'Mozilla/5.0 SoccerSourceAcquisition/1.1','Accept':'application/json,text/plain,*/*'})
+S.headers.update({'User-Agent':'Mozilla/5.0 SoccerSourceAcquisition/1.2','Accept':'application/json,text/plain,*/*'})
 
 LEAGUES=['E0','D1','I1','SP1','F1','N1']
+UNDERSTAT=['epl','bundesliga','serie_a','la_liga','ligue_1','eredivisie']
 SOFA='https://api.sofascore.com/api/v1'
 
 
 def fresh(path: Path) -> bool:
     try:
-        return path.exists() and (time.time()-path.stat().st_mtime) < CACHE_TTL_SEC and path.stat().st_size > 500
+        return path.exists() and path.stat().st_size > 500
     except Exception:
         return False
 
@@ -44,15 +47,15 @@ def get(url, *, binary=False):
 
 def season_folder(y): return f'{str(y)[-2:]}{str(y+1)[-2:]}'
 
-health={'timestamp_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'sources':{},'cache_ttl_sec':CACHE_TTL_SEC}
+health={'timestamp_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'sources':{},'cache_ttl_sec':CACHE_TTL_SEC,'scope':{'start_season':START_SEASON,'end_season':END_SEASON}}
 
-# Historical seasons are immutable for normal operation. Re-download only when
-# the cache is missing/stale. This converts repeated runs from full-history
-# acquisition into a small delta refresh.
+# FULL historical scope is retained. Cached historical files are never thrown
+# away and are not re-downloaded just because a new workflow run starts.
 for code in LEAGUES:
     ok=0
     cached=0
-    for y in (2024,2025):
+    failed=[]
+    for y in range(START_SEASON,END_SEASON+1):
         out=CACHE/'football_data'/f'{code}_{y}.csv'
         if fresh(out):
             cached += 1
@@ -63,14 +66,18 @@ for code in LEAGUES:
             raw=get(url,binary=True)
             if len(raw)>500:
                 out.write_bytes(raw); ok+=1
+            else:
+                failed.append(y)
         except Exception as e:
+            failed.append(y)
             health['sources'][f'football-data:{code}:{y}']=str(e)
-    health['sources'][f'football-data:{code}']={'usable_recent_seasons':ok,'cache_hits':cached}
+    health['sources'][f'football-data:{code}']={'usable_seasons':ok,'cache_hits':cached,'failed_seasons':failed}
 
-for league in ['epl','bundesliga','serie_a','la_liga','ligue_1','eredivisie']:
+for league in UNDERSTAT:
     ok=0
     cached=0
-    for y in (2024,2025):
+    failed=[]
+    for y in range(START_SEASON,END_SEASON+1):
         out=CACHE/'understat'/f'{league}_{y}.json'
         if fresh(out):
             cached += 1
@@ -81,13 +88,16 @@ for league in ['epl','bundesliga','serie_a','la_liga','ligue_1','eredivisie']:
             data=get(url)
             if isinstance(data,dict) and data:
                 out.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8'); ok+=1
+            else:
+                failed.append(y)
         except Exception as e:
+            failed.append(y)
             health['sources'][f'understat:{league}:{y}']=str(e)
-    health['sources'][f'understat:{league}']={'usable_recent_seasons':ok,'cache_hits':cached}
+    health['sources'][f'understat:{league}']={'usable_seasons':ok,'cache_hits':cached,'failed_seasons':failed}
 
-# SofaScore is intentionally a single lightweight probe on each run. Detailed
-# event/player history is not re-downloaded here; the production backtest uses
-# its own cache/checkpoint state.
+# SofaScore remains a lightweight availability probe. The production backtest
+# retains its detailed event/player cache; this acquisition workflow must not
+# replace that full production dataset with a smaller one.
 try:
     today=time.strftime('%Y-%m-%d',time.gmtime())
     out=CACHE/'sofascore'/'scheduled_events_latest.json'
@@ -100,12 +110,14 @@ except Exception as e:
 
 Path('data_source_health.json').write_text(json.dumps(health,ensure_ascii=False,indent=2),encoding='utf-8')
 
-fd=sum(v.get('usable_recent_seasons',0) for k,v in health['sources'].items() if k.startswith('football-data:') and isinstance(v,dict))
-us=sum(v.get('usable_recent_seasons',0) for k,v in health['sources'].items() if k.startswith('understat:') and isinstance(v,dict))
+fd=sum(v.get('usable_seasons',0) for k,v in health['sources'].items() if k.startswith('football-data:') and isinstance(v,dict))
+us=sum(v.get('usable_seasons',0) for k,v in health['sources'].items() if k.startswith('understat:') and isinstance(v,dict))
+fd_expected=len(LEAGUES)*(END_SEASON-START_SEASON+1)
+us_expected=len(UNDERSTAT)*(END_SEASON-START_SEASON+1)
 ss=health['sources'].get('sofascore_scheduled_events',{})
 sofa_n=ss.get('events',0) if isinstance(ss,dict) else 0
-print(f'[ACQ] Football-Data usable={fd}; Understat usable={us}; SofaScore events={sofa_n}')
+print(f'[ACQ] Football-Data usable={fd}/{fd_expected}; Understat usable={us}/{us_expected}; SofaScore events={sofa_n}')
 if fd==0: raise SystemExit('[ACQ] FAIL: Football-Data acquisition returned zero usable files')
 if us==0: raise SystemExit('[ACQ] FAIL: Understat acquisition returned zero usable seasons')
 if sofa_n==0: raise SystemExit('[ACQ] FAIL: SofaScore acquisition returned zero scheduled events')
-print('[ACQ] PASS: incremental soccer source acquisition complete')
+print('[ACQ] PASS: full-scope soccer source acquisition complete')
