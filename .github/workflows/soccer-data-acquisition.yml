@@ -1,8 +1,6 @@
 name: Soccer Source Acquisition
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
   schedule:
     - cron: '7 0,6,12,18 * * *'
 permissions:
@@ -14,11 +12,31 @@ env:
   PYTHONUNBUFFERED: "1"
 jobs:
   acquire:
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, 'Full-scope Soccer source acquisition')
     runs-on: [self-hosted, macOS, X64, soccer]
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Setup Python acquisition environment
+        run: |
+          set -euo pipefail
+          VENV="$RUNNER_TEMP/soccer-acquisition-venv"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --upgrade pip
+          "$VENV/bin/python" -m pip install -r requirements.txt
+          "$VENV/bin/python" - <<'PY'
+          import numpy, pandas, requests
+          print('[DEPS] soccer acquisition imports OK')
+          PY
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Acquisition preflight
+        run: |
+          set -euo pipefail
+          python3 --version
+          python -m py_compile soccer_source_acquisition.py
+          python - <<'PY'
+          import numpy, pandas, requests
+          print('[PREFLIGHT] core Python dependencies OK')
+          PY
       - name: Acquire and validate full-scope source data
         env:
           ACQ_TIMEOUT: "20"
@@ -27,6 +45,19 @@ jobs:
           ACQ_START_SEASON: "2010"
           ACQ_END_SEASON: "2025"
         run: python soccer_source_acquisition.py
+      - name: Validate acquisition health manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s data_source_health.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data_source_health.json')
+          d=json.loads(p.read_text())
+          print('[ACQ HEALTH] scope=', d.get('scope'))
+          print('[ACQ HEALTH] sources=', sorted(d.get('sources',{})))
+          PY
       - name: Persist acquisition cache
         if: success()
         run: |
@@ -48,6 +79,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soccer-source-acquisition-${{ github.run_id }}
-          path: data_source_health.json
+          path: |
+            data_source_health.json
+            cache/
           if-no-files-found: ignore
           retention-days: 30
