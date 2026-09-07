@@ -26,7 +26,7 @@ jobs:
           "$VENV/bin/python" -m pip install --upgrade pip
           "$VENV/bin/python" -m pip install -r requirements.txt
           "$VENV/bin/python" - <<'PY'
-          import numpy, pandas, requests
+          import numpy, pandas, requests, curl_cffi
           print('[DEPS] soccer acquisition imports OK')
           PY
           echo "$VENV/bin" >> "$GITHUB_PATH"
@@ -34,9 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 --version
-          python -m py_compile soccer_source_acquisition.py
+          python -m py_compile soccer_source_acquisition_v2.py
           python - <<'PY'
-          import numpy, pandas, requests
+          import numpy, pandas, requests, curl_cffi
           print('[PREFLIGHT] core Python dependencies OK')
           PY
       - name: Acquire and validate full-scope source data
@@ -46,7 +46,7 @@ jobs:
           ACQ_CACHE_TTL_SEC: "43200"
           ACQ_START_SEASON: "2010"
           ACQ_END_SEASON: "2025"
-        run: python soccer_source_acquisition.py
+        run: python soccer_source_acquisition_v2.py
       - name: Validate acquisition health manifest
         if: always()
         run: |
@@ -59,6 +59,11 @@ jobs:
           d=json.loads(p.read_text())
           print('[ACQ HEALTH] scope=', d.get('scope'))
           print('[ACQ HEALTH] sources=', sorted(d.get('sources',{})))
+          for name, info in d.get('sources',{}).items():
+              if isinstance(info, dict) and 'failed_seasons' in info:
+                  print('[ACQ HEALTH]', name, 'failed=', info.get('failed_seasons'))
+              if name == 'sofascore_scheduled_events':
+                  print('[ACQ HEALTH] SofaScore events=', info.get('events'), 'status=', info.get('status'))
           PY
       - name: Persist acquisition cache
         if: success()
@@ -66,9 +71,9 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add cache/ data_source_health.json
+          git add cache/ data_source_health.json soccer_source_acquisition_v2.py
           if git diff --cached --quiet; then echo '[ACQ] no cache changes'; exit 0; fi
-          git commit -m 'Full-scope Soccer source acquisition'
+          git commit -m 'Harden full-scope Soccer source acquisition'
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             if git rebase origin/main && git push origin HEAD:main; then exit 0; fi
