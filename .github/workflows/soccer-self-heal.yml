@@ -104,7 +104,7 @@ jobs:
           PY
       - name: Publish self-heal diagnostics without repository commits
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soccer-self-heal-${{ github.run_id }}
           path: self_heal/
