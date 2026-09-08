@@ -2,7 +2,8 @@ name: Soccer Source Acquisition
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    paths:
+      - 'control/soccer-acquisition-trigger.txt'
   schedule:
     - cron: '7 0,6,12,18 * * *'
 permissions:
@@ -18,13 +19,22 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Setup Python acquisition environment
+      - name: Setup persistent Python acquisition environment
         run: |
           set -euo pipefail
-          VENV="$RUNNER_TEMP/soccer-acquisition-venv"
-          python3 -m venv "$VENV"
-          "$VENV/bin/python" -m pip install --upgrade pip
-          "$VENV/bin/python" -m pip install -r requirements.txt
+          VENV="$HOME/actions-runner/_toolcache/soccer-acquisition-venv"
+          STAMP="$VENV/.requirements.sha256"
+          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
+          mkdir -p "$(dirname "$VENV")"
+          if [ ! -x "$VENV/bin/python" ] || [ ! -f "$STAMP" ] || [ "$(cat "$STAMP" 2>/dev/null || true)" != "$REQ_HASH" ]; then
+            echo '[DEPS] Creating/updating persistent soccer acquisition venv'
+            rm -rf "$VENV"
+            python3 -m venv "$VENV"
+            "$VENV/bin/python" -m pip install -r requirements.txt
+            printf '%s' "$REQ_HASH" > "$STAMP"
+          else
+            echo '[DEPS] Reusing persistent soccer acquisition venv'
+          fi
           "$VENV/bin/python" - <<'PY'
           import numpy, pandas, requests, curl_cffi
           print('[DEPS] soccer acquisition imports OK')
@@ -46,7 +56,7 @@ jobs:
           ACQ_CACHE_TTL_SEC: "43200"
           ACQ_START_SEASON: "2010"
           ACQ_END_SEASON: "2025"
-        run: python soccer_source_acquisition_v2.py
+        run: caffeinate -dimsu python soccer_source_acquisition_v2.py
       - name: Validate acquisition health manifest
         if: always()
         run: |
