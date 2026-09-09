@@ -1,0 +1,79 @@
+name: Integrated Soccer Pipeline
+on:
+  workflow_dispatch:
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Collect football-data (EPL, LaLiga, Bundesliga, SerieA, Ligue1)
+        run: |
+          python run.py collect-football-data || echo "football-data blocked, continuing"
+      - name: Collect understat (xG data)
+        run: |
+          python run.py collect-understat || echo "understat blocked, continuing"
+      - name: Collect sofascore (player stats)
+        run: |
+          python run.py collect-sofascore --budget 20 || echo "sofascore blocked, continuing"
+      - name: Upload data
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-data
+          path: data/raw/
+
+  features-research:
+    needs: [collect]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: soccer-data
+          path: data/
+      - run: pip install -r requirements.txt
+      - name: Build features + Elo baseline
+        run: python run.py features
+      - name: Run backtest research
+        run: python run.py research
+      - name: Upload models
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-models
+          path: |
+            data/models/
+            data/results/
+
+  predict-verify:
+    needs: [features-research]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: soccer-data
+          path: data/
+      - run: pip install -r requirements.txt
+      - name: Run predictions
+        run: python run.py predict
+      - name: Verify predictions
+        run: python run.py verify
+      - name: Show inventory
+        run: python run.py inventory
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-predictions
+          path: |
+            data/predictions/
+            data/results/settlement/
