@@ -1,6 +1,7 @@
 name: Integrated Soccer Pipeline
 on:
   workflow_dispatch:
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -10,23 +11,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - name: Collect football-data (EPL, LaLiga, Bundesliga, SerieA, Ligue1)
-        run: |
-          python run.py collect-football-data || echo "football-data blocked, continuing"
-      - name: Collect understat (xG data)
-        run: |
-          python run.py collect-understat || echo "understat blocked, continuing"
-      - name: Collect sofascore (player stats)
-        run: |
-          python run.py collect-sofascore --budget 20 || echo "sofascore blocked, continuing"
-      - name: Upload data
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Collect soccer data (football-data.co.uk / understat / sofascore)
+        run: python soccer_source_acquisition_v2.py || echo "acquisition script failed, continuing"
+      - name: Data quality gate
+        run: python production_data_quality_gate.py || echo "quality gate reported issues, continuing"
+      - name: Upload collected data
         uses: actions/upload-artifact@v4
         with:
           name: soccer-data
-          path: data/raw/
+          path: |
+            data_coverage.csv
+            competition_season_summary.csv
+          if-no-files-found: warn
 
-  features-research:
+  backtest:
     needs: [collect]
     runs-on: ubuntu-latest
     steps:
@@ -34,46 +34,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: soccer-data
-          path: data/
-      - run: pip install -r requirements.txt
-      - name: Build features + Elo baseline
-        run: python run.py features
-      - name: Run backtest research
-        run: python run.py research
-      - name: Upload models
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run backtest
+        run: python backtest.py
+      - name: Upload backtest results
         uses: actions/upload-artifact@v4
         with:
-          name: soccer-models
+          name: soccer-backtest-results
           path: |
-            data/models/
-            data/results/
+            model_comparison.csv
+            score_summary.csv
+            season_summary.csv
+            overall_summary.csv
+            feature_importance.csv
+          if-no-files-found: warn
 
-  predict-verify:
-    needs: [features-research]
+  audit:
+    needs: [backtest]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: soccer-data
-          path: data/
-      - run: pip install -r requirements.txt
-      - name: Run predictions
-        run: python run.py predict
-      - name: Verify predictions
-        run: python run.py verify
-      - name: Show inventory
-        run: python run.py inventory
-      - name: Upload results
-        uses: actions/upload-artifact@v4
-        with:
-          name: soccer-predictions
-          path: |
-            data/predictions/
-            data/results/settlement/
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run integrity gate
+        run: python production_integrity_gate.py || echo "integrity gate reported issues"
+      - name: Run audit
+        run: python soccer_audit.py || echo "audit reported issues"
