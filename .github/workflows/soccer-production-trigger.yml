@@ -1,0 +1,50 @@
+name: Soccer Production Trigger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backtest.py'
+      - 'v12_runner.py'
+      - 'production_*.py'
+      - 'soccer_audit.py'
+      - 'requirements.txt'
+      - '.github/workflows/soccer-backtest.yml'
+      - '.github/workflows/soccer-research-ai.yml'
+      - '.github/workflows/soccer-production-trigger.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  trigger:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch production when no production run is active
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          repo=os.environ['REPO']; token=os.environ['GH_TOKEN']
+          base=f'https://api.github.com/repos/{repo}'
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'soccer-production-trigger'}
+          def get(path):
+              r=urllib.request.Request(base+path,headers=headers)
+              with urllib.request.urlopen(r,timeout=30) as x: return json.load(x)
+          runs=get('/actions/runs?per_page=100').get('workflow_runs',[])
+          active=[r for r in runs if r.get('name')=='Soccer Backtest V12 - Hardened Production' and r.get('status') in {'queued','in_progress','waiting','requested','pending'}]
+          if active:
+              print('[TRIGGER] production already active:',[(r['id'],r['status']) for r in active])
+              raise SystemExit(0)
+          body=json.dumps({'ref':'main'}).encode()
+          req=urllib.request.Request(base+'/actions/workflows/soccer-backtest.yml/dispatches',data=body,method='POST',headers={**headers,'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as x:
+              print('[TRIGGER] production dispatch HTTP',x.status)
+          PY
