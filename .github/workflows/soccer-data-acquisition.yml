@@ -18,7 +18,7 @@ jobs:
     runs-on: [self-hosted, macOS, X64, soccer]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@fbc6f39 # v5.1.0; Node 24, supported by runner 2.337.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Setup persistent Python acquisition environment
         run: |
           set -euo pipefail
@@ -115,7 +115,7 @@ jobs:
           exit 1
       - name: Upload acquisition diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soccer-source-acquisition-${{ github.run_id }}
           path: |
