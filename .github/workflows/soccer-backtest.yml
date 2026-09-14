@@ -5,9 +5,6 @@ on:
     - cron: '17 0,6,12,18 * * *'
 permissions:
   contents: write
-concurrency:
-  group: soccer-backtest-v12-production-v12
-  cancel-in-progress: false
 env:
   PYTHONUNBUFFERED: "1"
 jobs:
@@ -20,40 +17,20 @@ jobs:
       - name: Mac runtime health gate
         run: |
           set -euo pipefail
-          echo '[HEALTH] runner=$(hostname)'
-          echo '[HEALTH] macOS:'; sw_vers
-          echo '[HEALTH] Python candidates:'
-          command -v python3.12 || true
-          command -v python3.11 || true
-          command -v python3 || true
-          echo '[HEALTH] Python:'; python3 --version
-          echo '[HEALTH] Runner listener processes:'; pgrep -af 'Runner.Listener' || true
-          echo '[HEALTH] Disk:'; df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
-          free_kb="$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')"
-          if [ "${free_kb:-0}" -lt 10485760 ]; then echo '[HEALTH] FAIL: less than 10 GiB free on workspace filesystem'; exit 20; fi
-          echo '[HEALTH] Memory summary:'; vm_stat | head -20 || true
-          echo '[HEALTH] CPU/load:'; uptime
-          echo '[HEALTH] File descriptor limit:'; ulimit -n
+          sw_vers; python3 --version; df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"; uptime
           curl --fail --silent --show-error --location --max-time 20 https://api.github.com/rate_limit >/dev/null
-          echo '[HEALTH] GitHub HTTPS PASS'
           sofascore_code="$(curl --silent --show-error --location --max-time 20 -o /dev/null -w '%{http_code}' https://www.sofascore.com || true)"
-          echo "[HEALTH] SofaScore HTTP status=${sofascore_code}"
-          if [ "$sofascore_code" = "000" ] || [ -z "$sofascore_code" ]; then
-            echo '[HEALTH] FAIL: SofaScore transport unavailable'; exit 21
-          fi
-          echo '[HEALTH] SofaScore network path PASS'
+          if [ "$sofascore_code" = "000" ] || [ -z "$sofascore_code" ]; then exit 21; fi
       - name: Setup Python
         run: |
           set -euo pipefail
           if command -v python3.12 >/dev/null 2>&1; then PYTHON_BIN="$(command -v python3.12)"; elif command -v python3.11 >/dev/null 2>&1; then PYTHON_BIN="$(command -v python3.11)"; else PYTHON_BIN="$(command -v python3)"; fi
-          echo "[DEPS] selected_python=$PYTHON_BIN"; "$PYTHON_BIN" --version
           VENV="$RUNNER_TEMP/soccer-v12-venv"; rm -rf "$VENV"; "$PYTHON_BIN" -m venv "$VENV"
-          REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"; echo "[DEPS] requirements_sha256=$REQ_HASH"
           "$VENV/bin/python" -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 --prefer-binary --upgrade pip
           "$VENV/bin/python" -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 --prefer-binary -r requirements.txt
           "$VENV/bin/python" - <<'PY'
           import numpy,pandas,requests,sklearn
-          print('[DEPS] core imports OK'); print('[DEPS] numpy=',numpy.__version__); print('[DEPS] pandas=',pandas.__version__); print('[DEPS] sklearn=',sklearn.__version__)
+          print('[DEPS] core imports OK',numpy.__version__,pandas.__version__,sklearn.__version__)
           PY
           echo "$VENV/bin" >> "$GITHUB_PATH"
       - name: V12 preflight and integrity gate
@@ -74,7 +51,8 @@ jobs:
               else: raise SystemExit('[PATCH] same_team not found')
               s += '\n# ' + marker + '\n'; p.write_text(s,encoding='utf-8')
           r=Path('v12_runner.py'); rs=r.read_text(encoding='utf-8'); safeguard='V12 SAFEGUARD: prior rows only; current outcome is appended after prediction.'
-          if safeguard not in rs: rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+safeguard, 1); r.write_text(rs,encoding='utf-8')
+          if safeguard not in rs:
+              rs=rs.replace('"""Soccer Backtest V12 runner.', '"""Soccer Backtest V12 runner.\n\n'+safeguard, 1); r.write_text(rs,encoding='utf-8')
           if 'prior rows only' not in rs.lower(): raise SystemExit('[PATCH] prior-row safeguard missing')
           PY
           python understat_quality_runtime_patch.py
@@ -82,34 +60,30 @@ jobs:
           python tests/smoke_test.py
           python soccer_audit.py
       - name: Restore latest resumable state
-        env:
-          GH_TOKEN: ${{ github.token }}
+        env: {GH_TOKEN: ${{ github.token }}}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import io, os, shutil, tempfile, zipfile
+          import io,os,shutil,tempfile,zipfile
           from pathlib import Path
           import requests
-          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']; headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
-          api=f'https://api.github.com/repos/{repo}'; session=requests.Session(); session.headers.update(headers); artifact=None
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']; headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}; api=f'https://api.github.com/repos/{repo}'; s=requests.Session(); s.headers.update(headers); artifact=None
           for name in ('soccer-backtest-state-v12','soccer-backtest-state-v9'):
-              r=session.get(f'{api}/actions/artifacts',params={'name':name,'per_page':100},timeout=60); r.raise_for_status(); items=[a for a in r.json().get('artifacts',[]) if not a.get('expired',False)]
+              r=s.get(f'{api}/actions/artifacts',params={'name':name,'per_page':100},timeout=60); r.raise_for_status(); items=[a for a in r.json().get('artifacts',[]) if not a.get('expired',False)]
               if items: artifact=max(items,key=lambda a:a.get('created_at','')); break
-          if not artifact: print('[STATE] no prior artifact'); raise SystemExit(0)
-          print(f"[STATE] restoring artifact id={artifact['id']} name={artifact['name']} created={artifact.get('created_at')}")
-          r=session.get(artifact['archive_download_url'],timeout=120); r.raise_for_status()
+          if not artifact: raise SystemExit(0)
+          r=s.get(artifact['archive_download_url'],timeout=120); r.raise_for_status()
           with tempfile.TemporaryDirectory() as td:
-              with zipfile.ZipFile(io.BytesIO(r.content)) as z: z.extractall(td)
-              root=Path(td); checkpoint=root/'backtest_checkpoint_v9.pkl.gz'
-              if checkpoint.exists(): shutil.copy2(checkpoint,Path('backtest_checkpoint_v9.pkl.gz'))
+              with zipfile.ZipFile(io.BytesIO(r.content)) as z:z.extractall(td)
+              root=Path(td); cp=root/'backtest_checkpoint_v9.pkl.gz'
+              if cp.exists(): shutil.copy2(cp,'backtest_checkpoint_v9.pkl.gz')
               cache=root/'cache'
               if cache.exists():
                   dst=Path('cache'); dst.mkdir(exist_ok=True)
                   for src in cache.rglob('*'):
-                      rel=src.relative_to(cache); out=dst/rel
+                      out=dst/src.relative_to(cache)
                       if src.is_dir(): out.mkdir(parents=True,exist_ok=True)
                       else: out.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(src,out)
-              print('[STATE] restored checkpoint/cache only; source code remains from current commit')
           PY
       - name: Run V12 chronological backtest
         env:
@@ -124,11 +98,10 @@ jobs:
       - name: Verify outputs and prediction integrity
         run: |
           set -euo pipefail
-          python -m py_compile backtest.py v12_runner.py tests/smoke_test.py soccer_audit.py understat_quality_runtime_patch.py production_integrity_gate.py production_data_quality_gate.py production_score_mom_gate.py
           python soccer_audit.py
           test -s BACKTEST_COMPLETE_V12; test -s backtest_results_v12.csv; test -s overall_summary_v12.csv
           python - <<'PY'
-          import numpy as np, pandas as pd
+          import numpy as np,pandas as pd
           d=pd.read_csv('backtest_results_v12.csv',low_memory=False); need=['HomeProbV12','DrawProbV12','AwayProbV12','PredictedV12','Actual']; miss=[c for c in need if c not in d.columns]
           if miss: raise SystemExit(f'missing columns: {miss}')
           p=d[['HomeProbV12','DrawProbV12','AwayProbV12']].to_numpy(float)
@@ -141,20 +114,19 @@ jobs:
           python production_integrity_gate.py
       - name: Upload verified state artifact
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: soccer-backtest-state-v12
           path: |
             backtest_checkpoint_v9.pkl.gz
             cache/
-            backtest_results_v12.csv
             backtest_results_v9.csv
             backtest_scores_v9.csv
             backtest_mom_v9.csv
-            overall_summary_v12.csv
-            overall_summary_v9.csv
             score_summary_v9.csv
             mom_summary_v9.csv
+            backtest_results_v12.csv
+            overall_summary_v12.csv
             production_run_manifest.json
             production_data_quality.json
             production_score_mom_gate.json
@@ -162,14 +134,14 @@ jobs:
           retention-days: 90
       - name: Upload failure diagnostics without touching production state
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: soccer-backtest-failure-${{ github.run_id }}
           path: |
-            backtest_results_v12.csv
             backtest_results_v9.csv
             backtest_scores_v9.csv
             backtest_mom_v9.csv
+            backtest_results_v12.csv
             overall_summary_v12.csv
             BACKTEST_COMPLETE_V12
             backtest_checkpoint_v9.pkl.gz
@@ -183,14 +155,8 @@ jobs:
         if: success()
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backtest_checkpoint_v9.pkl.gz cache/ production_run_manifest.json
-          if git diff --cached --quiet; then echo '[COMMIT] no verified state changes'; exit 0; fi
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'; git add backtest_checkpoint_v9.pkl.gz cache/ production_run_manifest.json production_score_mom_gate.json
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m 'Persist verified Soccer V12 state'
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            if git rebase origin/main && git push origin HEAD:main; then echo "[PERSIST] verified state push succeeded on attempt $attempt"; exit 0; fi
-            git rebase --abort 2>/dev/null || true
-            sleep $((attempt * 5))
-          done
-          echo '[PERSIST] verified state push failed after 5 attempts'; exit 1
+          for attempt in 1 2 3 4 5; do git fetch origin main; if git rebase origin/main && git push origin HEAD:main; then exit 0; fi; git rebase --abort 2>/dev/null || true; sleep $((attempt*5)); done
+          exit 1
