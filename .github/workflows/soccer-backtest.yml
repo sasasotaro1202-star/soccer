@@ -22,6 +22,10 @@ jobs:
           set -euo pipefail
           echo '[HEALTH] runner=$(hostname)'
           echo '[HEALTH] macOS:'; sw_vers
+          echo '[HEALTH] Python candidates:'
+          command -v python3.12 || true
+          command -v python3.11 || true
+          command -v python3 || true
           echo '[HEALTH] Python:'; python3 --version
           echo '[HEALTH] Runner listener processes:'; pgrep -af 'Runner.Listener' || true
           echo '[HEALTH] Disk:'; df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
@@ -32,8 +36,6 @@ jobs:
           echo '[HEALTH] File descriptor limit:'; ulimit -n
           curl --fail --silent --show-error --location --max-time 20 https://api.github.com/rate_limit >/dev/null
           echo '[HEALTH] GitHub HTTPS PASS'
-          # SofaScore may deliberately return HTTP 403 to generic clients/WAF probes.
-          # A 403 proves the network path is reachable; only transport failure (000) is fatal.
           sofascore_code="$(curl --silent --show-error --location --max-time 20 -o /dev/null -w '%{http_code}' https://www.sofascore.com || true)"
           echo "[HEALTH] SofaScore HTTP status=${sofascore_code}"
           if [ "$sofascore_code" = "000" ] || [ -z "$sofascore_code" ]; then
@@ -43,15 +45,29 @@ jobs:
       - name: Setup Python
         run: |
           set -euo pipefail
+          if command -v python3.12 >/dev/null 2>&1; then
+            PYTHON_BIN="$(command -v python3.12)"
+          elif command -v python3.11 >/dev/null 2>&1; then
+            PYTHON_BIN="$(command -v python3.11)"
+          else
+            PYTHON_BIN="$(command -v python3)"
+          fi
+          echo "[DEPS] selected_python=$PYTHON_BIN"
+          "$PYTHON_BIN" --version
           VENV="$RUNNER_TEMP/soccer-v12-venv"
-          python3 -m venv "$VENV"
+          rm -rf "$VENV"
+          "$PYTHON_BIN" -m venv "$VENV"
           REQ_HASH="$(shasum -a 256 requirements.txt | awk '{print $1}')"
           echo "[DEPS] requirements_sha256=$REQ_HASH"
-          "$VENV/bin/python" -m pip install --upgrade pip
-          "$VENV/bin/python" -m pip install -r requirements.txt
+          "$VENV/bin/python" -m pip --version
+          "$VENV/bin/python" -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 --prefer-binary --upgrade pip
+          "$VENV/bin/python" -m pip install --disable-pip-version-check --no-input --timeout 30 --retries 2 --prefer-binary -r requirements.txt
           "$VENV/bin/python" - <<'PY'
-          import numpy,pandas,requests
+          import numpy,pandas,requests,sklearn
           print('[DEPS] core imports OK')
+          print('[DEPS] numpy=',numpy.__version__)
+          print('[DEPS] pandas=',pandas.__version__)
+          print('[DEPS] sklearn=',sklearn.__version__)
           PY
           echo "$VENV/bin" >> "$GITHUB_PATH"
       - name: V12 preflight and integrity gate
