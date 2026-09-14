@@ -7,6 +7,9 @@ permissions:
   contents: write
 env:
   PYTHONUNBUFFERED: "1"
+concurrency:
+  group: soccer-production
+  cancel-in-progress: false
 jobs:
   backtest:
     runs-on: [self-hosted, macOS, X64, soccer]
