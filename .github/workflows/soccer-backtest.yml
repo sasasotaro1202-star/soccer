@@ -32,8 +32,14 @@ jobs:
           echo '[HEALTH] File descriptor limit:'; ulimit -n
           curl --fail --silent --show-error --location --max-time 20 https://api.github.com/rate_limit >/dev/null
           echo '[HEALTH] GitHub HTTPS PASS'
-          curl --fail --silent --show-error --location --max-time 20 https://www.sofascore.com >/dev/null
-          echo '[HEALTH] SofaScore HTTPS PASS'
+          # SofaScore may deliberately return HTTP 403 to generic clients/WAF probes.
+          # A 403 proves the network path is reachable; only transport failure (000) is fatal.
+          sofascore_code="$(curl --silent --show-error --location --max-time 20 -o /dev/null -w '%{http_code}' https://www.sofascore.com || true)"
+          echo "[HEALTH] SofaScore HTTP status=${sofascore_code}"
+          if [ "$sofascore_code" = "000" ] || [ -z "$sofascore_code" ]; then
+            echo '[HEALTH] FAIL: SofaScore transport unavailable'; exit 21
+          fi
+          echo '[HEALTH] SofaScore network path PASS'
       - name: Setup Python
         run: |
           set -euo pipefail
