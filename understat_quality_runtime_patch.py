@@ -8,8 +8,11 @@ s=P.read_text(encoding='utf-8')
 if MARKER in s: raise SystemExit(0)
 start=s.find('def build_understat_index(matches):')
 if start < 0: raise SystemExit('build_understat_index() not found; refusing unsafe patch')
+# Support both the original fail-closed source and the current unmarked baseline.
 end=s.find('\n\n# SOCCER_UNDERSTAT_FAIL_CLOSED_V1', start)
-if end < 0: raise SystemExit('old Understat marker not found; refusing unsafe patch')
+if end < 0:
+    end=s.find('\n\n# =========================\n# TEAM STATE', start)
+if end < 0: raise SystemExit('Understat function boundary not found; refusing unsafe patch')
 new='''def build_understat_index(matches):
     idx = {}
     cov = []
@@ -50,5 +53,5 @@ new='''def build_understat_index(matches):
     return idx, cov
 
 # SOCCER_UNDERSTAT_GRACEFUL_V2'''
-P.write_text(s[:start]+new+s[end+len('\n\n# SOCCER_UNDERSTAT_FAIL_CLOSED_V1'):],encoding='utf-8')
+P.write_text(s[:start]+new+s[end:],encoding='utf-8')
 print('[PATCH] Understat graceful degradation V2 applied')
