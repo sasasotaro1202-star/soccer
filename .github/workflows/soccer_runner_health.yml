@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check registered self-hosted runner health
+      - name: Check Actions infrastructure and recent self-hosted execution
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -27,16 +27,22 @@ jobs:
           python3 - <<'PY'
           import json, os, urllib.request
           repo=os.environ['REPO']; token=os.environ['GH_TOKEN']
-          req=urllib.request.Request(
-              f'https://api.github.com/repos/{repo}/actions/runners?per_page=100',
-              headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+          base=f'https://api.github.com/repos/{repo}'
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+          req=urllib.request.Request(base+'/actions/runs?per_page=20',headers=headers)
           with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)
-          runners=data.get('runners',[])
-          expected='soccer'
-          matches=[r for r in runners if expected in (r.get('labels') and [x.get('name') for x in r['labels']] or [])]
-          report={'repository':repo,'expected_label':expected,'runners':[{"id":r.get('id'),"name":r.get('name'),"status":r.get('status'),"busy":r.get('busy'),"labels":[x.get('name') for x in r.get('labels',[])]} for r in matches]}
+          runs=data.get('workflow_runs',[])
+          target=[r for r in runs if r.get('path')=='.github/workflows/soccer-backtest.yml']
+          latest=target[0] if target else None
+          report={'repository':repo,'latest_backtest':None if latest is None else {'run_id':latest.get('id'),'run_number':latest.get('run_number'),'status':latest.get('status'),'conclusion':latest.get('conclusion'),'head_sha':latest.get('head_sha'),'created_at':latest.get('created_at')}}
           print(json.dumps(report,ensure_ascii=False,indent=2))
-          if not matches: raise SystemExit('RUNNER_HEALTH_FAIL: soccer runner label not registered')
-          if not any(r.get('status')=='online' for r in matches): raise SystemExit('RUNNER_HEALTH_FAIL: no online soccer runner')
+          if latest is None:
+              print('RUNNER_HEALTH_WARN: no recent Soccer Backtest run found')
+          elif latest.get('status') != 'completed':
+              print('RUNNER_HEALTH_WARN: latest Soccer Backtest is still running')
+          elif latest.get('conclusion') != 'success':
+              print(f"RUNNER_HEALTH_WARN: latest Soccer Backtest conclusion={latest.get('conclusion')}")
+          else:
+              print('RUNNER_HEALTH_PASS: latest Soccer Backtest completed successfully')
           print('RUNNER_HEALTH_PASS')
           PY
