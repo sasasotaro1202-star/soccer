@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-09-18T08:17:54Z",
+  "timestamp_utc": "2026-09-19T22:56:03Z",
   "sources": {
     "football-data:E0": {
       "usable_seasons": 16,
@@ -89,7 +89,6 @@
     "sofascore_scheduled_events": {
       "events": 0,
       "probe_dates": [
-        "2026-09-16",
         "2026-09-17",
         "2026-09-18",
         "2026-09-19",
@@ -100,7 +99,8 @@
         "2026-09-24",
         "2026-09-25",
         "2026-09-26",
-        "2026-09-27"
+        "2026-09-27",
+        "2026-09-28"
       ],
       "warmup": [
         {
@@ -110,18 +110,6 @@
         }
       ],
       "attempts": [
-        {
-          "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-09-16",
-          "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-16: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
-        },
-        {
-          "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-09-16",
-          "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-16/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
-        },
         {
           "base": "https://api.sofascore.com/api/v1",
           "date": "2026-09-17",
@@ -255,16 +243,16 @@
           "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-27/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         },
         {
-          "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-09-16",
+          "base": "https://api.sofascore.com/api/v1",
+          "date": "2026-09-28",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-09-16: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-28: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         },
         {
-          "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-09-16",
+          "base": "https://api.sofascore.com/api/v1",
+          "date": "2026-09-28",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-09-16/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-28/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
@@ -399,16 +387,16 @@
           "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-09-27/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         },
         {
-          "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-09-16",
+          "base": "https://api.sofascore.app/api/v1",
+          "date": "2026-09-28",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-16: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-09-28: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         },
         {
-          "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-09-16",
+          "base": "https://api.sofascore.app/api/v1",
+          "date": "2026-09-28",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-16/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-09-28/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
@@ -541,6 +529,18 @@
           "date": "2026-09-27",
           "variant": "/inverse",
           "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-27/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
+        },
+        {
+          "base": "https://www.sofascore.com/api/v1",
+          "date": "2026-09-28",
+          "variant": "normal",
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-28: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
+        },
+        {
+          "base": "https://www.sofascore.com/api/v1",
+          "date": "2026-09-28",
+          "variant": "/inverse",
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-28/inverse: HTTP 404: {\"error\":{\"code\":404,\"message\":\"Not Found\"}}"
         }
       ],
       "status": "empty"
