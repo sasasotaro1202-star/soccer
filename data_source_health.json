@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-10-04T06:30:34Z",
+  "timestamp_utc": "2026-10-23T13:18:45Z",
   "sources": {
     "football-data:E0": {
       "usable_seasons": 16,
@@ -89,18 +89,18 @@
     "sofascore_scheduled_events": {
       "events": 0,
       "probe_dates": [
-        "2026-10-02",
-        "2026-10-03",
-        "2026-10-04",
-        "2026-10-05",
-        "2026-10-06",
-        "2026-10-07",
-        "2026-10-08",
-        "2026-10-09",
-        "2026-10-10",
-        "2026-10-11",
-        "2026-10-12",
-        "2026-10-13"
+        "2026-10-21",
+        "2026-10-22",
+        "2026-10-23",
+        "2026-10-24",
+        "2026-10-25",
+        "2026-10-26",
+        "2026-10-27",
+        "2026-10-28",
+        "2026-10-29",
+        "2026-10-30",
+        "2026-10-31",
+        "2026-11-01"
       ],
       "warmup": [
         {
@@ -112,435 +112,435 @@
       "attempts": [
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-02",
+          "date": "2026-10-21",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-02: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-21: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-02",
+          "date": "2026-10-21",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-02/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-21/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-03",
+          "date": "2026-10-22",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-03: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-22: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-03",
+          "date": "2026-10-22",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-03/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-22/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-04",
+          "date": "2026-10-23",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-04: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-23: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-04",
+          "date": "2026-10-23",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-04/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-23/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-05",
+          "date": "2026-10-24",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-05: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-24: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-05",
+          "date": "2026-10-24",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-05/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-24/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-06",
+          "date": "2026-10-25",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-06: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-25: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-06",
+          "date": "2026-10-25",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-06/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-25/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-07",
+          "date": "2026-10-26",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-07: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-26: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-07",
+          "date": "2026-10-26",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-07/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-26/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-08",
+          "date": "2026-10-27",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-08: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-27: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-08",
+          "date": "2026-10-27",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-08/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-27/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-09",
+          "date": "2026-10-28",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-09: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-28: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-09",
+          "date": "2026-10-28",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-09/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-28/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-10",
+          "date": "2026-10-29",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-10: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-29: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-10",
+          "date": "2026-10-29",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-10/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-29/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-11",
+          "date": "2026-10-30",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-11: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-30: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-11",
+          "date": "2026-10-30",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-11/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-30/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-12",
+          "date": "2026-10-31",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-12: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-31: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-12",
+          "date": "2026-10-31",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-12/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-31/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-13",
+          "date": "2026-11-01",
           "variant": "normal",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-13: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-11-01: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.com/api/v1",
-          "date": "2026-10-13",
+          "date": "2026-11-01",
           "variant": "/inverse",
-          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-13/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
+          "error": "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-11-01/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"Forbidden\" }}"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-02",
+          "date": "2026-10-21",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-02: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-21: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-02",
+          "date": "2026-10-21",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-02/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-21/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-03",
+          "date": "2026-10-22",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-03: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-22: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-03",
+          "date": "2026-10-22",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-03/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-22/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-04",
+          "date": "2026-10-23",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-04: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-23: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-04",
+          "date": "2026-10-23",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-04/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-23/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-05",
+          "date": "2026-10-24",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-05: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-24: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-05",
+          "date": "2026-10-24",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-05/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-24/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-06",
+          "date": "2026-10-25",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-06: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-25: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-06",
+          "date": "2026-10-25",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-06/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-25/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-07",
+          "date": "2026-10-26",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-07: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-26: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-07",
+          "date": "2026-10-26",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-07/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-26/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-08",
+          "date": "2026-10-27",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-08: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-27: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-08",
+          "date": "2026-10-27",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-08/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-27/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-09",
+          "date": "2026-10-28",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-09: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-28: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-09",
+          "date": "2026-10-28",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-09/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-28/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-10",
+          "date": "2026-10-29",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-10: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-29: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-10",
+          "date": "2026-10-29",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-10/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-29/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-11",
+          "date": "2026-10-30",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-11: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-30: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-11",
+          "date": "2026-10-30",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-11/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-30/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-12",
+          "date": "2026-10-31",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-12: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-31: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-12",
+          "date": "2026-10-31",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-12/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-31/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-13",
+          "date": "2026-11-01",
           "variant": "normal",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-13: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-11-01: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://api.sofascore.app/api/v1",
-          "date": "2026-10-13",
+          "date": "2026-11-01",
           "variant": "/inverse",
-          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-10-13/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+          "error": "https://api.sofascore.app/api/v1/sport/football/scheduled-events/2026-11-01/inverse: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-02",
+          "date": "2026-10-21",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-02: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-21: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-02",
+          "date": "2026-10-21",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-02/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-21/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-03",
+          "date": "2026-10-22",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-03: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-22: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-03",
+          "date": "2026-10-22",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-03/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-22/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-04",
+          "date": "2026-10-23",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-04: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-23: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-04",
+          "date": "2026-10-23",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-04/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-23/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-05",
+          "date": "2026-10-24",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-05: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-24: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-05",
+          "date": "2026-10-24",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-05/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-24/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-06",
+          "date": "2026-10-25",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-06: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-25: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-06",
+          "date": "2026-10-25",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-06/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-25/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-07",
+          "date": "2026-10-26",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-07: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-26: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-07",
+          "date": "2026-10-26",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-07/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-26/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-08",
+          "date": "2026-10-27",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-08: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-27: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-08",
+          "date": "2026-10-27",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-08/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-27/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-09",
+          "date": "2026-10-28",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-09: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-28: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-09",
+          "date": "2026-10-28",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-09/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-28/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-10",
+          "date": "2026-10-29",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-10: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-29: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-10",
+          "date": "2026-10-29",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-10/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-29/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-11",
+          "date": "2026-10-30",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-11: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-30: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-11",
+          "date": "2026-10-30",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-11/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-30/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-12",
+          "date": "2026-10-31",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-12: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-31: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-12",
+          "date": "2026-10-31",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-12/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-31/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-13",
+          "date": "2026-11-01",
           "variant": "normal",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-13: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-11-01: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         },
         {
           "base": "https://www.sofascore.com/api/v1",
-          "date": "2026-10-13",
+          "date": "2026-11-01",
           "variant": "/inverse",
-          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-10-13/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
+          "error": "https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-11-01/inverse: HTTP 403: {\"error\": {\"code\": 403, \"reason\": \"challenge\" }}"
         }
       ],
       "status": "empty"
